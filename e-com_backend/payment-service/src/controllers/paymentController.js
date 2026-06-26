@@ -1,0 +1,44 @@
+const service = require('../services/paymentService');
+const { success, error } = require('../utils/responseHandler');
+
+const createPayment = async (req, res, next) => {
+  try {
+    const { orderId, userId, paymentMethod } = req.body;
+    const payment = await service.createPayment(orderId, userId, paymentMethod);
+    success(res, payment, 201);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getPayment = async (req, res, next) => {
+  try {
+    const payment = await service.getPaymentById(req.params.id);
+    if (!payment) return error(res, 'Payment not found', 404);
+    success(res, payment);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getPaymentByOrder = async (req, res, next) => {
+  try {
+    const payment = await service.getPaymentByOrderId(req.params.orderId);
+    if (!payment) return error(res, 'Payment not found for this order', 404);
+    success(res, payment);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const updatePaymentStatus = async (req, res, next) => {
+  try {
+    const { status, transactionId } = req.body;
+    const payment = await service.updatePaymentStatus(req.params.id, status, transactionId);
+    success(res, payment);
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { createPayment, getPayment, getPaymentByOrder, updatePaymentStatus };

@@ -1,0 +1,22 @@
+[
+  {
+    "productId": "4ad8150e-8489-475a-8bf4-83cdb39b0b66",
+    "name": "MacBook Pro 15",
+    "description": "Apple MacBook Pro with M3 Pro chip",
+    "brand": "Apple",
+    "category": "Laptop",
+    "price": 1099.99,
+    "images": [
+      "macbook-front.jpg",
+      "macbook-side.jpg"
+    ],
+    "specifications": {
+      "processor": "Apple M3 Pro",
+      "ram": "18GB",
+      "storage": "256GB SSD",
+      "display": "16.2 inch Liquid Retina XDR"
+    },
+    "createdAt": "2026-06-24T06:37:56.435Z",
+    "updatedAt": "2026-06-24T06:37:56.435Z"
+  }
+]
