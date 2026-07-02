@@ -3,8 +3,8 @@ const { success, error } = require('../utils/responseHandler');
 
 const createOrder = async (req, res, next) => {
   try {
-    const { userId, shippingAddress, paymentMethod } = req.body;
-    const order = await service.createOrder(userId, shippingAddress, paymentMethod);
+    const { userId, email, shippingAddress, paymentMethod } = req.body;
+    const order = await service.createOrder(userId, email, shippingAddress, paymentMethod);
     success(res, order, 201);
   } catch (err) {
     next(err);

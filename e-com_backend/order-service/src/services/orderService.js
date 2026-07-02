@@ -4,7 +4,7 @@ const { docClient, ORDERS_TABLE } = require('../utils/fileHandler');
 const { getCartByUserId, getProductById, clearCart } = require('../utils/cartApi');
 const { checkStock } = require('../utils/inventoryApi');
 
-const createOrder = async (userId, shippingAddress, paymentMethod) => {
+const createOrder = async (userId, email, shippingAddress, paymentMethod) => {
   const cart = await getCartByUserId(userId);
   if (!cart) throw Object.assign(new Error('Cart not found for this user'), { statusCode: 404 });
   if (!cart.items || cart.items.length === 0)
@@ -62,6 +62,7 @@ const createOrder = async (userId, shippingAddress, paymentMethod) => {
   const order = {
     orderid: uuidv4(),
     userId,
+    email,
     items: enrichedItems,
     shippingAddress,
     paymentMethod,
