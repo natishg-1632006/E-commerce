@@ -1,4 +1,5 @@
 const { body, validationResult } = require('express-validator');
+const { PAYMENT_STATUS } = require('../constants/paymentConstants');
 
 const handleValidation = (req, res, next) => {
   const errors = validationResult(req);
@@ -24,8 +25,8 @@ const updateStatusRules = [
     .trim()
     .notEmpty()
     .withMessage('status is required')
-    .isIn(['Paid', 'Failed', 'Refunded'])
-    .withMessage('status must be Paid, Failed or Refunded'),
+    .isIn(Object.values(PAYMENT_STATUS).filter((s) => s !== PAYMENT_STATUS.PENDING))
+    .withMessage(`status must be one of: ${[PAYMENT_STATUS.PAID, PAYMENT_STATUS.FAILED, PAYMENT_STATUS.REFUNDED].join(', ')}`),
   handleValidation,
 ];
 

@@ -1,5 +1,7 @@
 const { body, validationResult } = require('express-validator');
 
+const { ORDER_STATUS } = require('../constants/orderConstants');
+
 const handleValidation = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty())
@@ -30,8 +32,8 @@ const updateStatusRules = [
     .trim()
     .notEmpty()
     .withMessage('orderStatus is required')
-    .isIn(['Pending', 'Confirmed', 'Processing', 'Shipped', 'Delivered'])
-    .withMessage('Invalid orderStatus value'),
+    .isIn(Object.values(ORDER_STATUS))
+    .withMessage(`orderStatus must be one of: ${Object.values(ORDER_STATUS).join(', ')}`),
   handleValidation,
 ];
 

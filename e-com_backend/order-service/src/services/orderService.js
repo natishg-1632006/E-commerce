@@ -3,13 +3,30 @@ const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk
 const { docClient, ORDERS_TABLE } = require('../utils/fileHandler');
 const { getCartByUserId, getProductById, clearCart } = require('../utils/cartApi');
 const { checkStock, reserveStock, releaseStock } = require('../utils/inventoryApi');
+const {
+  ORDER_STATUS,
+  PAYMENT_STATUS,
+  CANCELLABLE_STATUSES,
+  TERMINAL_STATUSES,
+} = require('../constants/orderConstants');
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const getExpiresAt = () => {
+  const minutes = parseInt(process.env.ORDER_PAYMENT_TIMEOUT_MINUTES || '15', 10);
+  return new Date(Date.now() + minutes * 60 * 1000).toISOString();
+};
+
+// ─── Create Order ─────────────────────────────────────────────────────────────
 
 const createOrder = async (userId, email, shippingAddress, paymentMethod) => {
+  // ── Step 1: Fetch and validate cart ────────────────────────────────────────
   const cart = await getCartByUserId(userId);
   if (!cart) throw Object.assign(new Error('Cart not found for this user'), { statusCode: 404 });
   if (!cart.items || cart.items.length === 0)
     throw Object.assign(new Error('Cart is empty'), { statusCode: 400 });
 
+  // ── Step 2: Validate products and stock availability ───────────────────────
   const stockErrors = [];
   const priceChanges = [];
 
@@ -22,7 +39,6 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod) => {
         return null;
       }
 
-      // Stock availability check via Inventory Service (SRP — not Products table)
       const stockInfo = await checkStock(item.productId, item.quantity);
       if (!stockInfo) {
         stockErrors.push(`No inventory record found for "${product.name}"`);
@@ -57,18 +73,22 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod) => {
       { statusCode: 400 }
     );
 
-  // ── Automatic reservation ────────────────────────────────────────────────
-  // Reserve stock for every item atomically. If any single reservation fails,
-  // roll back all previously reserved items before aborting order creation.
+  // ── Step 3: Reserve inventory (with full rollback on any failure) ──────────
+  // orderId is generated here so it can be used as the reservation referenceId,
+  // making every inventory movement traceable back to this specific order.
   const orderId = uuidv4();
   const reserved = [];
+
+  console.log(`[Order] Reserving inventory | orderId: ${orderId} | userId: ${userId} | items: ${enrichedItems.length} | timestamp: ${new Date().toISOString()}`);
 
   for (const item of enrichedItems) {
     try {
       await reserveStock(item.productId, item.quantity, orderId);
       reserved.push(item);
+      console.log(`[Order] Reserved | orderId: ${orderId} | productId: ${item.productId} | quantity: ${item.quantity}`);
     } catch (err) {
-      // Roll back every item that was already reserved in this loop
+      // Rollback all previously reserved items before aborting
+      console.warn(`[Order] Reservation failed for productId: ${item.productId} | orderId: ${orderId} | error: ${err.message} | rolling back ${reserved.length} item(s)`);
       await Promise.allSettled(
         reserved.map((r) => releaseStock(r.productId, r.quantity, orderId))
       );
@@ -79,7 +99,9 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod) => {
     }
   }
 
+  // ── Step 4: Build and persist the order ───────────────────────────────────
   const totalAmount = parseFloat(enrichedItems.reduce((sum, i) => sum + i.subtotal, 0).toFixed(2));
+  const now = new Date().toISOString();
 
   const order = {
     orderid: orderId,
@@ -88,22 +110,24 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod) => {
     items: enrichedItems,
     shippingAddress,
     paymentMethod,
-    paymentStatus: 'Pending',
-    orderStatus: 'Pending',
+    paymentStatus: PAYMENT_STATUS.PENDING,
+    orderStatus: ORDER_STATUS.PENDING_PAYMENT,
     inventoryUpdated: false,
     totalAmount,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    expiresAt: getExpiresAt(),
     ...(priceChanges.length > 0 && { priceUpdated: true, priceChanges }),
   };
 
   await docClient.send(new PutCommand({ TableName: ORDERS_TABLE, Item: order }));
   await clearCart(cart.cartid);
 
-  // Stock is reserved here. currentStock is NOT reduced yet.
-  // Reduction happens only after payment is confirmed via Payment Service.
+  console.log(`[Order] Created | orderId: ${orderId} | userId: ${userId} | totalAmount: ${totalAmount} | paymentMethod: ${paymentMethod} | expiresAt: ${order.expiresAt} | timestamp: ${now}`);
 
   return order;
 };
+
+// ─── Read Operations ──────────────────────────────────────────────────────────
 
 const getAllOrders = async () => {
   const { Items = [] } = await docClient.send(new ScanCommand({ TableName: ORDERS_TABLE }));
@@ -127,46 +151,81 @@ const getOrdersByUser = async (userId) => {
   return Items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 };
 
+// ─── Status Update ────────────────────────────────────────────────────────────
+
 const updateOrderStatus = async (orderid, orderStatus) => {
   const existing = await getOrderById(orderid);
   if (!existing) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
-  if (existing.orderStatus === 'Cancelled')
-    throw Object.assign(new Error('Cannot update a cancelled order'), { statusCode: 400 });
+
+  if (TERMINAL_STATUSES.includes(existing.orderStatus))
+    throw Object.assign(
+      new Error(`Cannot update order with terminal status: ${existing.orderStatus}`),
+      { statusCode: 400 }
+    );
 
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: ORDERS_TABLE,
       Key: { orderid },
-      UpdateExpression: 'SET orderStatus = :status',
-      ExpressionAttributeValues: { ':status': orderStatus },
+      UpdateExpression: 'SET orderStatus = :status, updatedAt = :at',
+      ExpressionAttributeValues: {
+        ':status': orderStatus,
+        ':at': new Date().toISOString(),
+      },
       ReturnValues: 'ALL_NEW',
     })
   );
+
+  console.log(`[Order] Status updated | orderId: ${orderid} | from: ${existing.orderStatus} | to: ${orderStatus} | timestamp: ${Attributes.updatedAt}`);
   return Attributes;
 };
+
+// ─── Cancel Order ─────────────────────────────────────────────────────────────
 
 const cancelOrder = async (orderid) => {
   const existing = await getOrderById(orderid);
   if (!existing) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
-  if (['Shipped', 'Delivered'].includes(existing.orderStatus))
-    throw Object.assign(new Error(`Cannot cancel order with status: ${existing.orderStatus}`), { statusCode: 400 });
-  if (existing.orderStatus === 'Cancelled')
-    throw Object.assign(new Error('Order is already cancelled'), { statusCode: 400 });
+
+  if (!CANCELLABLE_STATUSES.includes(existing.orderStatus))
+    throw Object.assign(
+      new Error(`Cannot cancel order with status: ${existing.orderStatus}`),
+      { statusCode: 400 }
+    );
+
+  const now = new Date().toISOString();
+
+  // Release reserved inventory before marking the order cancelled.
+  // This is critical — without this, stock stays locked forever.
+  if (existing.items && existing.items.length > 0) {
+    console.log(`[Order] Releasing reserved stock on cancel | orderId: ${orderid} | userId: ${existing.userId} | items: ${existing.items.length} | timestamp: ${now}`);
+    await Promise.allSettled(
+      existing.items.map((item) => releaseStock(item.productId, item.quantity, orderid))
+    );
+  }
 
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: ORDERS_TABLE,
       Key: { orderid },
-      UpdateExpression: 'SET orderStatus = :status, paymentStatus = :payment',
-      ExpressionAttributeValues: { ':status': 'Cancelled', ':payment': 'Cancelled' },
+      UpdateExpression: 'SET orderStatus = :status, paymentStatus = :payment, updatedAt = :at',
+      ExpressionAttributeValues: {
+        ':status': ORDER_STATUS.CANCELLED,
+        ':payment': PAYMENT_STATUS.FAILED,
+        ':at': now,
+      },
       ReturnValues: 'ALL_NEW',
     })
   );
 
-  // No stock restore needed here — stock was never deducted at order creation
-  // If payment was already Paid, Payment Service handles the stock restore on refund
-
+  console.log(`[Order] Cancelled | orderId: ${orderid} | userId: ${existing.userId} | timestamp: ${now}`);
   return Attributes;
 };
 
-module.exports = { createOrder, getAllOrders, getOrderById, getOrdersByUser, updateOrderStatus, cancelOrder };
+module.exports = {
+  createOrder,
+  getAllOrders,
+  getOrderById,
+  getOrdersByUser,
+  updateOrderStatus,
+  cancelOrder,
+};

@@ -1,4 +1,5 @@
 const service = require('../services/orderService');
+const { expirePendingOrders } = require('../services/orderExpirationService');
 const { success, error } = require('../utils/responseHandler');
 
 const createOrder = async (req, res, next) => {
@@ -57,4 +58,13 @@ const cancelOrder = async (req, res, next) => {
   }
 };
 
-module.exports = { createOrder, getAllOrders, getOrderById, getOrdersByUser, updateOrderStatus, cancelOrder };
+const expirePending = async (req, res, next) => {
+  try {
+    const result = await expirePendingOrders();
+    success(res, result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { createOrder, getAllOrders, getOrderById, getOrdersByUser, updateOrderStatus, cancelOrder, expirePending };

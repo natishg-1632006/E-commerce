@@ -3,6 +3,7 @@ const controller = require('../controllers/orderController');
 const { createOrderRules, updateStatusRules } = require('../validations/orderValidation');
 
 router.post('/', createOrderRules, controller.createOrder);
+router.post('/expire-pending', controller.expirePending);  // internal — trigger expiration manually or via scheduler
 router.get('/', controller.getAllOrders);
 router.get('/user/:userId', controller.getOrdersByUser);
 router.get('/:id', controller.getOrderById);
