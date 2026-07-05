@@ -313,7 +313,6 @@ const reduceStock = async (productId, quantity, referenceId = '') => {
     throw err;
   }
 
-  // Prevent negative stock
   if (inventory.currentStock - quantity < 0) {
     const err = new Error(`Insufficient stock for product: ${productId}. Available: ${inventory.currentStock}, Requested: ${quantity}`);
     err.statusCode = 400;
@@ -321,21 +320,29 @@ const reduceStock = async (productId, quantity, referenceId = '') => {
   }
 
   const previousStock = inventory.currentStock;
-  const newCurrent = inventory.currentStock - quantity;
-  const newAvailable = newCurrent - inventory.reservedStock;
-  const status = deriveStatus(newAvailable, inventory.lowStockThreshold);
+  const newCurrent   = inventory.currentStock - quantity;                    // 30 - 1 = 29
+  const newReserved  = Math.max(0, inventory.reservedStock - quantity);      //  1 - 1 =  0
+  const newAvailable = newCurrent - newReserved;                             // 29 - 0 = 29
+  const newStatus    = deriveStatus(newAvailable, inventory.lowStockThreshold);
+
+  console.log(`[DEBUG][InventoryService] reduceStock | productId: ${productId} | BEFORE: currentStock=${inventory.currentStock} reservedStock=${inventory.reservedStock} availableStock=${inventory.availableStock}`);
+  console.log(`[DEBUG][InventoryService] reduceStock | WRITING: currentStock=${newCurrent} reservedStock=${newReserved} availableStock=${newAvailable} status=${newStatus}`);
 
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { Inventoryid: inventory.Inventoryid },
-      UpdateExpression: 'SET currentStock = :c, availableStock = :a, #status = :s, lastUpdated = :u',
+      UpdateExpression:
+        'SET currentStock = :c, reservedStock = :r, availableStock = :a, #status = :s, lastUpdated = :u, soldQuantity = if_not_exists(soldQuantity, :zero) + :qty',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
         ':c': newCurrent,
+        ':r': newReserved,
         ':a': newAvailable,
-        ':s': status,
+        ':s': newStatus,
         ':u': new Date().toISOString(),
+        ':zero': 0,
+        ':qty': quantity,
       },
       ReturnValues: 'ALL_NEW',
     })
@@ -344,7 +351,7 @@ const reduceStock = async (productId, quantity, referenceId = '') => {
   await recordMovement(productId, 'OUT', quantity, 'Order confirmed - stock deducted', referenceId);
 
   console.log(
-    `[Inventory Updated] Product: ${productId} | Previous: ${previousStock} | Purchased: ${quantity} | Current: ${newCurrent} | Updated At: ${Attributes.lastUpdated}`
+    `[Inventory Updated] Product: ${productId} | Previous: ${previousStock} | Purchased: ${quantity} | Current: ${newCurrent} | Reserved: ${newReserved} | Available: ${newAvailable} | SoldQuantity: ${(inventory.soldQuantity || 0) + quantity} | Updated At: ${Attributes.lastUpdated}`
   );
 
   return { ...Attributes, previousStock };

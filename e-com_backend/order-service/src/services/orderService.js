@@ -2,7 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient, ORDERS_TABLE } = require('../utils/fileHandler');
 const { getCartByUserId, getProductById, clearCart } = require('../utils/cartApi');
-const { checkStock } = require('../utils/inventoryApi');
+const { checkStock, reserveStock, releaseStock } = require('../utils/inventoryApi');
 
 const createOrder = async (userId, email, shippingAddress, paymentMethod) => {
   const cart = await getCartByUserId(userId);
@@ -57,10 +57,32 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod) => {
       { statusCode: 400 }
     );
 
+  // ── Automatic reservation ────────────────────────────────────────────────
+  // Reserve stock for every item atomically. If any single reservation fails,
+  // roll back all previously reserved items before aborting order creation.
+  const orderId = uuidv4();
+  const reserved = [];
+
+  for (const item of enrichedItems) {
+    try {
+      await reserveStock(item.productId, item.quantity, orderId);
+      reserved.push(item);
+    } catch (err) {
+      // Roll back every item that was already reserved in this loop
+      await Promise.allSettled(
+        reserved.map((r) => releaseStock(r.productId, r.quantity, orderId))
+      );
+      throw Object.assign(
+        new Error(`Reservation failed for "${item.name}": ${err.message}`),
+        { statusCode: 400 }
+      );
+    }
+  }
+
   const totalAmount = parseFloat(enrichedItems.reduce((sum, i) => sum + i.subtotal, 0).toFixed(2));
 
   const order = {
-    orderid: uuidv4(),
+    orderid: orderId,
     userId,
     email,
     items: enrichedItems,
@@ -77,8 +99,8 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod) => {
   await docClient.send(new PutCommand({ TableName: ORDERS_TABLE, Item: order }));
   await clearCart(cart.cartid);
 
-  // Stock is NOT deducted here — it is deducted only after payment is confirmed
-  // Payment Service calls PATCH /api/inventory/reduce-stock after successful payment
+  // Stock is reserved here. currentStock is NOT reduced yet.
+  // Reduction happens only after payment is confirmed via Payment Service.
 
   return order;
 };

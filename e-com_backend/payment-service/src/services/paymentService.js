@@ -17,6 +17,8 @@ const reduceInventoryOnce = async (order) => {
     return false;
   }
 
+  console.log(`[DEBUG][Payment] reduceInventoryOnce called | orderId: ${order.orderid} | items: ${JSON.stringify(order.items.map(i => ({ productId: i.productId, quantity: i.quantity })))}`);
+
   const stockResults = await Promise.allSettled(
     order.items.map((item) => reduceStock(item.productId, item.quantity, order.orderid))
   );

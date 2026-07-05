@@ -1,0 +1,36 @@
+service: payment-service
+
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  region: ap-southeast-1
+  stage: dev
+
+  profile: Natish
+
+  environment:
+    NODE_ENV: production
+    SERVICE_NAME: ${env:SERVICE_NAME}
+    AWS_REGION: ${env:AWS_REGION}
+    DYNAMODB_TABLE_NAME: ${env:DYNAMODB_TABLE_NAME}
+    ORDERS_TABLE_NAME: ${env:ORDERS_TABLE_NAME}
+    PRODUCTS_TABLE_NAME: ${env:PRODUCTS_TABLE_NAME}
+    ORDER_SERVICE_URL: ${env:ORDER_SERVICE_URL}
+    INVENTORY_SERVICE_URL: ${env:INVENTORY_SERVICE_URL}
+
+functions:
+  app:
+    handler: lambda.handler
+    memorySize: 512
+    timeout: 30
+
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+
+      - httpApi:
+          path: /
+          method: ANY

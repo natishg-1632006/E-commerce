@@ -8,11 +8,13 @@ const INVENTORY_URL = process.env.INVENTORY_SERVICE_URL || 'http://localhost:500
  * Business Rule 6 — stock is deducted only after payment is confirmed.
  */
 const reduceStock = async (productId, quantity, referenceId) => {
+  console.log(`[DEBUG][InventoryApi] PATCH reduce-stock | productId: ${productId} | quantity: ${quantity} | referenceId: ${referenceId} | url: ${INVENTORY_URL}/api/inventory/reduce-stock`);
   const { data } = await axios.patch(`${INVENTORY_URL}/api/inventory/reduce-stock`, {
     productId,
     quantity,
     referenceId,
   });
+  console.log(`[DEBUG][InventoryApi] reduce-stock response | productId: ${productId} | response: ${JSON.stringify(data)}`);
   return data?.data || null;
 };
 

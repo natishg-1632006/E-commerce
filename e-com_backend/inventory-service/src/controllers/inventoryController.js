@@ -104,7 +104,9 @@ const checkStockAvailability = async (req, res, next) => {
 const reduceStock = async (req, res, next) => {
   try {
     const { productId, quantity, referenceId } = req.body;
+    console.log(`[DEBUG][InventoryController] reduceStock called | productId: ${productId} | quantity: ${quantity} | referenceId: ${referenceId}`);
     const result = await service.reduceStock(productId, parseInt(quantity), referenceId);
+    console.log(`[DEBUG][InventoryController] reduceStock result | currentStock: ${result.currentStock} | reservedStock: ${result.reservedStock} | availableStock: ${result.availableStock} | soldQuantity: ${result.soldQuantity}`);
     success(res, {
       productId: result.productId,
       previousStock: result.previousStock,

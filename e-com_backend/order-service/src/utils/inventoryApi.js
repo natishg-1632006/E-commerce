@@ -18,4 +18,35 @@ const checkStock = async (productId, quantity) => {
   }
 };
 
-module.exports = { checkStock };
+/**
+ * Reserve stock for a single product during order creation.
+ * Calls POST /api/inventory/reserve — internal, service-to-service only.
+ */
+const reserveStock = async (productId, quantity, referenceId) => {
+  const { data } = await axios.post(`${INVENTORY_URL}/api/inventory/reserve`, {
+    productId,
+    quantity,
+    referenceId,
+  });
+  return data?.data || null;
+};
+
+/**
+ * Release reserved stock — called on reservation rollback if a later item fails.
+ * Calls POST /api/inventory/release — internal, service-to-service only.
+ */
+const releaseStock = async (productId, quantity, referenceId) => {
+  try {
+    const { data } = await axios.post(`${INVENTORY_URL}/api/inventory/release`, {
+      productId,
+      quantity,
+      referenceId,
+    });
+    return data?.data || null;
+  } catch (err) {
+    console.warn(`[Inventory Release Failed] Product: ${productId} | Error: ${err.message}`);
+    return null;
+  }
+};
+
+module.exports = { checkStock, reserveStock, releaseStock };
