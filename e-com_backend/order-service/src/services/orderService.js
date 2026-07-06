@@ -151,6 +151,96 @@ const getOrdersByUser = async (userId) => {
   return Items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 };
 
+const hasProcessedEvent = (order, eventKey) => {
+  return Array.isArray(order.processedEventIds) && order.processedEventIds.includes(eventKey);
+};
+
+const appendProcessedEvent = async (orderid, eventKey) => {
+  await docClient.send(
+    new UpdateCommand({
+      TableName: ORDERS_TABLE,
+      Key: { orderid },
+      UpdateExpression: 'SET processedEventIds = list_append(if_not_exists(processedEventIds, :emptyList), :eventIdList)',
+      ExpressionAttributeValues: {
+        ':emptyList': [],
+        ':eventIdList': [eventKey],
+      },
+      ReturnValues: 'NONE',
+    })
+  );
+};
+
+const processPaymentEvent = async ({ eventType, eventId, message }) => {
+  if (!message || typeof message.orderId !== 'string') {
+    const err = new Error('Invalid payment event payload');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const idempotencyKey = eventId || message.paymentId;
+  if (!idempotencyKey) {
+    const err = new Error('Missing eventId or paymentId for idempotency');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const order = await getOrderById(message.orderId);
+  if (!order) {
+    const err = new Error('Order not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (hasProcessedEvent(order, idempotencyKey)) {
+    console.log('[Order] Event already processed');
+    return { skipped: true };
+  }
+
+  const now = new Date().toISOString();
+  let paymentStatus;
+  let orderStatus;
+
+  switch (eventType) {
+    case 'PAYMENT_SUCCESS':
+      paymentStatus = PAYMENT_STATUS.PAID;
+      orderStatus = ORDER_STATUS.PROCESSING;
+      break;
+    case 'PAYMENT_FAILED':
+      paymentStatus = PAYMENT_STATUS.FAILED;
+      orderStatus = ORDER_STATUS.PAYMENT_FAILED;
+      break;
+    case 'PAYMENT_REFUNDED':
+      paymentStatus = PAYMENT_STATUS.REFUNDED;
+      orderStatus = ORDER_STATUS.CANCELLED;
+      break;
+    default:
+      const err = new Error(`Unsupported payment event type: ${eventType}`);
+      err.statusCode = 400;
+      throw err;
+  }
+
+  console.log('[Order] Updating order', { orderId: message.orderId, eventType });
+
+  const { Attributes } = await docClient.send(
+    new UpdateCommand({
+      TableName: ORDERS_TABLE,
+      Key: { orderid: message.orderId },
+      UpdateExpression: 'SET paymentStatus = :payment, orderStatus = :order, updatedAt = :at, processedEventIds = list_append(if_not_exists(processedEventIds, :emptyList), :eventIdList)',
+      ExpressionAttributeValues: {
+        ':payment': paymentStatus,
+        ':order': orderStatus,
+        ':at': now,
+        ':emptyList': [],
+        ':eventIdList': [idempotencyKey],
+      },
+      ReturnValues: 'ALL_NEW',
+    })
+  );
+
+  console.log(`[Order] Updated | orderId: ${message.orderId} | paymentStatus=${paymentStatus} | orderStatus=${orderStatus}`);
+  return Attributes;
+};
+
 // ─── Status Update ────────────────────────────────────────────────────────────
 
 const updateOrderStatus = async (orderid, orderStatus) => {
@@ -228,4 +318,5 @@ module.exports = {
   getOrdersByUser,
   updateOrderStatus,
   cancelOrder,
+  processPaymentEvent,
 };

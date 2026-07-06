@@ -1,86 +1,18 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient, PAYMENTS_TABLE } = require('../utils/fileHandler');
-const { getOrderById, updateOrderPaymentStatus, markInventoryUpdated } = require('../utils/orderApi');
-const { reduceStock, releaseStock } = require('../utils/inventoryApi');
+const { getOrderById } = require('../utils/orderApi');
 const { PAYMENT_STATUS, ORDER_STATUS } = require('../constants/paymentConstants');
+const { publishPaymentEvent } = require('./snsService');
 
-// ─── Post-payment communication layer ────────────────────────────────────────
-//
-// These two functions are the SNS/SQS migration seam.
-//
-// TODAY  — they call Inventory Service and Order Service directly over HTTP.
-// FUTURE — replace the bodies of these two functions with a single SNS publish.
-//          Nothing else in this file needs to change.
-//
-// notifyPaymentSuccess: called after payment is confirmed as PAID.
-// notifyPaymentFailed:  called after payment is confirmed as FAILED or REFUNDED.
-
-const notifyPaymentSuccess = async (order, paymentId) => {
-  // Step 1 — Update order status
-  await updateOrderPaymentStatus(order.orderid, PAYMENT_STATUS.PAID, ORDER_STATUS.PROCESSING);
-  console.log(`[Payment] Order updated | orderId: ${order.orderid} | paymentStatus: ${PAYMENT_STATUS.PAID} | orderStatus: ${ORDER_STATUS.PROCESSING}`);
-
-  // Step 2 — Reduce inventory (idempotent — guarded by inventoryUpdated flag)
-  await reduceInventoryOnce(order, paymentId);
+const publishOrderEvent = async (eventType, payment) => {
+  const order = await getOrderById(payment.orderId);
+  await publishPaymentEvent(eventType, payment, order);
 };
 
-const notifyPaymentFailed = async (order, paymentId, newOrderStatus) => {
-  // Step 1 — Release reserved inventory (best-effort)
-  if (order.items && order.items.length > 0) {
-    const results = await Promise.allSettled(
-      order.items.map((item) => releaseStock(item.productId, item.quantity, order.orderid))
-    );
-    results.forEach((r, idx) => {
-      if (r.status === 'rejected') {
-        console.error(`[Payment] Release failed | orderId: ${order.orderid} | productId: ${order.items[idx].productId} | error: ${r.reason?.message}`);
-      }
-    });
-  }
-
-  // Step 2 — Update order status
-  await updateOrderPaymentStatus(order.orderid, PAYMENT_STATUS.FAILED, newOrderStatus);
-  console.log(`[Payment] Order updated | orderId: ${order.orderid} | paymentStatus: ${PAYMENT_STATUS.FAILED} | orderStatus: ${newOrderStatus}`);
-};
-
-// ─── Inventory reduction (idempotency guard) ──────────────────────────────────
-
-/**
- * Reduce inventory for every item in the order — exactly once.
- *
- * The inventoryUpdated flag on the order record is the idempotency key.
- * If it is already true, this function returns immediately without touching
- * inventory. This prevents duplicate stock reduction on retries or replays.
- */
-const reduceInventoryOnce = async (order, paymentId) => {
-  if (order.inventoryUpdated) {
-    console.log(`[Payment] Inventory already updated — skipping | orderId: ${order.orderid} | paymentId: ${paymentId}`);
-    return false;
-  }
-
-  console.log(`[Payment] Reducing inventory | orderId: ${order.orderid} | paymentId: ${paymentId} | items: ${order.items.length} | timestamp: ${new Date().toISOString()}`);
-
-  const results = await Promise.allSettled(
-    order.items.map((item) => reduceStock(item.productId, item.quantity, order.orderid))
-  );
-
-  const failed = results.filter((r) => r.status === 'rejected');
-  if (failed.length > 0) {
-    const reasons = failed.map((f) => f.reason?.message).join(' | ');
-    console.error(`[Payment] Inventory reduction failed | orderId: ${order.orderid} | paymentId: ${paymentId} | errors: ${reasons}`);
-    // Payment remains PAID — inventory failure is reported so it can be retried.
-    // Do NOT throw here — the payment was successful and must not be rolled back.
-    throw Object.assign(
-      new Error(`Inventory update failed after payment: ${reasons}`),
-      { statusCode: 500 }
-    );
-  }
-
-  // Persist the idempotency flag immediately after all reductions succeed
-  await markInventoryUpdated(order.orderid);
-  console.log(`[Payment] Inventory updated | orderId: ${order.orderid} | paymentId: ${paymentId} | inventoryUpdated: true | timestamp: ${new Date().toISOString()}`);
-  return true;
-};
+// Payment service now publishes events to SNS instead of calling Order/Inventory directly.
+// The publish helper is in `snsService.js` and will throw on failure, but this service
+// treats publish failures as non-fatal notifications.
 
 // ─── Service functions ────────────────────────────────────────────────────────
 
@@ -115,9 +47,7 @@ const createPayment = async (orderId, userId, paymentMethod) => {
   if (isCOD) {
     // COD is confirmed immediately — no payment gateway involved.
     // Treat as PAID synchronously.
-    await notifyPaymentSuccess(order, payment.paymentid);
-
-    // Update payment record to PAID
+    // Update payment record to PAID first
     await docClient.send(
       new UpdateCommand({
         TableName: PAYMENTS_TABLE,
@@ -132,6 +62,14 @@ const createPayment = async (orderId, userId, paymentMethod) => {
     );
     payment.status = PAYMENT_STATUS.PAID;
     console.log(`[Payment] COD confirmed | paymentId: ${payment.paymentid} | orderId: ${orderId} | timestamp: ${new Date().toISOString()}`);
+
+    try {
+      console.log('[Payment] Payment Updated');
+      console.log('[SNS] Publishing PAYMENT_SUCCESS');
+      await publishOrderEvent('PAYMENT_SUCCESS', payment);
+    } catch (err) {
+      console.error('[SNS] Publish failed', err);
+    }
   }
 
   return payment;
@@ -199,9 +137,12 @@ const updatePaymentStatus = async (paymentid, status, transactionId) => {
     );
 
     console.log(`[Payment] Paid | paymentId: ${paymentid} | orderId: ${payment.orderId} | userId: ${payment.userId} | amount: ${payment.amount} | transactionId: ${txnId} | timestamp: ${now}`);
-
-    if (order) {
-      await notifyPaymentSuccess(order, paymentid);
+    try {
+      console.log('[Payment] Payment Updated');
+      console.log('[SNS] Publishing PAYMENT_SUCCESS');
+      await publishOrderEvent('PAYMENT_SUCCESS', Attributes);
+    } catch (err) {
+      console.error('[SNS] Publish failed', err);
     }
 
     return Attributes;
@@ -224,9 +165,12 @@ const updatePaymentStatus = async (paymentid, status, transactionId) => {
     );
 
     console.log(`[Payment] Failed | paymentId: ${paymentid} | orderId: ${payment.orderId} | userId: ${payment.userId} | timestamp: ${now}`);
-
-    if (order) {
-      await notifyPaymentFailed(order, paymentid, 'PAYMENT_FAILED');
+    try {
+      console.log('[Payment] Payment Updated');
+      console.log('[SNS] Publishing PAYMENT_FAILED');
+      await publishOrderEvent('PAYMENT_FAILED', Attributes);
+    } catch (err) {
+      console.error('[SNS] Publish failed', err);
     }
 
     return Attributes;
@@ -252,9 +196,12 @@ const updatePaymentStatus = async (paymentid, status, transactionId) => {
     );
 
     console.log(`[Payment] Refunded | paymentId: ${paymentid} | orderId: ${payment.orderId} | userId: ${payment.userId} | timestamp: ${now}`);
-
-    if (order) {
-      await notifyPaymentFailed(order, paymentid, ORDER_STATUS.CANCELLED);
+    try {
+      console.log('[Payment] Payment Updated');
+      console.log('[SNS] Publishing PAYMENT_REFUNDED');
+      await publishOrderEvent('PAYMENT_REFUNDED', Attributes);
+    } catch (err) {
+      console.error('[SNS] Publish failed', err);
     }
 
     return Attributes;

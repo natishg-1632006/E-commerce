@@ -17,6 +17,23 @@ provider:
     DYNAMODB_TABLE_NAME: ${env:DYNAMODB_TABLE_NAME}
     DYNAMODB_MOVEMENTS_TABLE_NAME: ${env:DYNAMODB_MOVEMENTS_TABLE_NAME}
     PRODUCT_SERVICE_URL: ${env:PRODUCT_SERVICE_URL}
+    INVENTORY_QUEUE_URL: ${env:INVENTORY_QUEUE_URL}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Scan
+            - dynamodb:Query
+          Resource:
+            - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_NAME}
+            - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_NAME}/index/*
+            - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_MOVEMENTS_TABLE_NAME}
 
 functions:
   app:
@@ -32,3 +49,8 @@ functions:
       - httpApi:
           path: /
           method: ANY
+
+      - sqs:
+          arn: ${env:INVENTORY_QUEUE_ARN}
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures

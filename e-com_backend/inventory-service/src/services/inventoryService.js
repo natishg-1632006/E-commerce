@@ -48,6 +48,84 @@ const getInventoryByProductId = async (productId) => {
   return Items[0] || null;
 };
 
+const getProductEventKey = (inventory, eventId, productId) => {
+  return `${eventId}:${productId}`;
+};
+
+const hasProcessedEvent = (inventory, eventId, productId) => {
+  const key = getProductEventKey(inventory, eventId, productId);
+  return Array.isArray(inventory.processedEventIds) && inventory.processedEventIds.includes(key);
+};
+
+const appendProcessedEvent = async (inventory, eventId, productId) => {
+  const key = getProductEventKey(inventory, eventId, productId);
+  await docClient.send(
+    new UpdateCommand({
+      TableName: TABLE_NAME,
+      Key: { Inventoryid: inventory.Inventoryid },
+      UpdateExpression: 'SET processedEventIds = list_append(if_not_exists(processedEventIds, :emptyList), :eventIdList)',
+      ExpressionAttributeValues: {
+        ':emptyList': [],
+        ':eventIdList': [key],
+      },
+      ReturnValues: 'NONE',
+    })
+  );
+};
+
+const processPaymentEvent = async ({ eventType, eventId, message }) => {
+  if (!message || !Array.isArray(message.items)) {
+    const err = new Error('Invalid payment event payload');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const idempotencyKey = eventId || message.paymentId;
+  if (!idempotencyKey) {
+    const err = new Error('Missing eventId or paymentId for idempotency');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  for (const item of message.items) {
+    const { productId, quantity } = item;
+    console.log(`[Inventory] Processing product ${productId}`);
+
+    const inventory = await getInventoryByProductId(productId);
+    if (!inventory) {
+      const err = new Error(`Inventory not found for product: ${productId}`);
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (hasProcessedEvent(inventory, idempotencyKey, productId)) {
+      console.log('[Inventory] Event already processed');
+      continue;
+    }
+
+    switch (eventType) {
+      case 'PAYMENT_SUCCESS':
+        await reduceStock(productId, quantity, idempotencyKey);
+        break;
+      case 'PAYMENT_FAILED':
+        await releaseStock(productId, quantity, idempotencyKey);
+        break;
+      case 'PAYMENT_REFUNDED':
+        await increaseStock(productId, quantity, `Refunded payment ${message.paymentId || idempotencyKey}`);
+        break;
+      default:
+        const err = new Error(`Unsupported payment event type: ${eventType}`);
+        err.statusCode = 400;
+        throw err;
+    }
+
+    await appendProcessedEvent(inventory, idempotencyKey, productId);
+    console.log(`[Inventory] Updated product ${productId} | eventType=${eventType}`);
+  }
+
+  return { success: true };
+};
+
 // ─── Service Functions ────────────────────────────────────────────────────────
 
 const createInventory = async (data) => {
@@ -379,4 +457,5 @@ module.exports = {
   checkStockAvailability,
   getLowStockProducts,
   deleteInventory,
+  processPaymentEvent,
 };

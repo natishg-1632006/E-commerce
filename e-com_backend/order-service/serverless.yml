@@ -1,4 +1,4 @@
-service: payment-service
+service: order-service
 
 frameworkVersion: "3"
 
@@ -15,8 +15,12 @@ provider:
     SERVICE_NAME: ${env:SERVICE_NAME}
     AWS_REGION: ${env:AWS_REGION}
     DYNAMODB_TABLE_NAME: ${env:DYNAMODB_TABLE_NAME}
-    ORDERS_TABLE_NAME: ${env:ORDERS_TABLE_NAME}
-    PAYMENT_EVENTS_TOPIC_ARN: ${env:PAYMENT_EVENTS_TOPIC_ARN}
+    CART_TABLE_NAME: ${env:CART_TABLE_NAME}
+    PRODUCTS_TABLE_NAME: ${env:PRODUCTS_TABLE_NAME}
+    CART_SERVICE_URL: ${env:CART_SERVICE_URL}
+    INVENTORY_SERVICE_URL: ${env:INVENTORY_SERVICE_URL}
+    ORDER_PAYMENT_TIMEOUT_MINUTES: ${env:ORDER_PAYMENT_TIMEOUT_MINUTES}
+    ORDER_QUEUE_URL: ${env:ORDER_QUEUE_URL}
 
   iam:
     role:
@@ -26,24 +30,14 @@ provider:
             - dynamodb:GetItem
             - dynamodb:PutItem
             - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
             - dynamodb:Scan
             - dynamodb:Query
           Resource:
             - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_NAME}
             - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_NAME}/index/*
-        - Effect: Allow
-          Action:
-            - dynamodb:GetItem
-            - dynamodb:Scan
-            - dynamodb:Query
-          Resource:
-            - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:ORDERS_TABLE_NAME}
-            - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:ORDERS_TABLE_NAME}/index/*
-        - Effect: Allow
-          Action:
-            - sns:Publish
-          Resource:
-            - ${env:PAYMENT_EVENTS_TOPIC_ARN}
+            - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:CART_TABLE_NAME}
+            - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:PRODUCTS_TABLE_NAME}
 
 functions:
   app:
@@ -59,3 +53,8 @@ functions:
       - httpApi:
           path: /
           method: ANY
+
+      - sqs:
+          arn: ${env:ORDER_QUEUE_ARN}
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
