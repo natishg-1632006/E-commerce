@@ -22,11 +22,11 @@ app.get('/api', (req, res) => {
     service: process.env.SERVICE_NAME,
     version: '1.0.0',
     status: 'running',
-    endpoints: { payment: '/api/payment' },
+    endpoints: { payment: '/api/v1/payment' },
   });
 });
 
-app.use('/api/payment', paymentRoutes);
+app.use('/api/v1/payment', paymentRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

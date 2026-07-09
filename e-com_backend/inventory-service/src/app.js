@@ -22,11 +22,11 @@ app.get('/api', (req, res) => {
     service: process.env.SERVICE_NAME,
     version: '1.0.0',
     status: 'running',
-    endpoints: { inventory: '/api/inventory' },
+    endpoints: { inventory: '/api/v1/inventory' },
   });
 });
 
-app.use('/api/inventory', inventoryRoutes);
+app.use('/api/v1/inventory', inventoryRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -22,11 +22,11 @@ app.get('/api', (req, res) => {
     service: process.env.SERVICE_NAME,
     version: '1.0.0',
     status: 'running',
-    endpoints: { orders: '/api/orders' },
+    endpoints: { orders: '/api/v1/orders' },
   });
 });
 
-app.use('/api/orders', orderRoutes);
+app.use('/api/v1/orders', orderRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

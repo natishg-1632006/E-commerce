@@ -22,11 +22,11 @@ app.get('/api', (req, res) => {
     service: process.env.SERVICE_NAME,
     version: '1.0.0',
     status: 'running',
-    endpoints: { cart: '/api/cart' },
+    endpoints: { cart: '/api/v1/cart' },
   });
 });
 
-app.use('/api/cart', cartRoutes);
+app.use('/api/v1/cart', cartRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
