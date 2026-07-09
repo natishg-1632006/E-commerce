@@ -13,7 +13,8 @@ const getCart = async (req, res, next) => {
 
 const addToCart = async (req, res, next) => {
   try {
-    const { userId, productId, quantity } = req.body;
+    const { productId, quantity } = req.body;
+    const userId = req.user.sub; // Get the userId from the authenticated user's information
     const cart = await service.addToCart(userId, productId, quantity);
     success(res, cart, 201);
   } catch (err) {
