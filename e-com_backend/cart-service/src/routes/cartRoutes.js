@@ -23,21 +23,21 @@ router.put(
 );
 
 router.delete(
-  '/remove/:userId/:productId',
+  '/remove/:productId',
   authMiddleware,
   authorize('Customer', 'Admin'),
   controller.removeItem
 );
 
 router.delete(
-  '/clear/:userId',
+  '/clear',
   authMiddleware,
   authorize('Customer', 'Admin'),
   controller.clearCart
 );
 
 router.get(
-  '/:userId',
+  '/',
   authMiddleware,
   authorize('Customer', 'Admin'),
   controller.getCart

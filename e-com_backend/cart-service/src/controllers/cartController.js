@@ -3,7 +3,8 @@ const { success, error } = require('../utils/responseHandler');
 
 const getCart = async (req, res, next) => {
   try {
-    const cart = await service.getCart(req.params.userId);
+    const userId = req.user.sub; // Get the userId from the authenticated user's information
+    const cart = await service.getCart(userId);
     if (!cart) return error(res, 'Cart not found', 404);
     success(res, cart);
   } catch (err) {
@@ -24,7 +25,8 @@ const addToCart = async (req, res, next) => {
 
 const updateQuantity = async (req, res, next) => {
   try {
-    const { userId, productId, quantity } = req.body;
+    const {productId, quantity } = req.body;
+    const userId = req.user.sub; // Get the userId from the authenticated user's information
     const cart = await service.updateQuantity(userId, productId, quantity);
     success(res, cart);
   } catch (err) {
@@ -34,7 +36,8 @@ const updateQuantity = async (req, res, next) => {
 
 const removeItem = async (req, res, next) => {
   try {
-    const { userId, productId } = req.params;
+    const { productId } = req.params;
+    const userId = req.user.sub; // Get the userId from the authenticated user's information
     const cart = await service.removeItem(userId, productId);
     success(res, cart);
   } catch (err) {
@@ -44,7 +47,8 @@ const removeItem = async (req, res, next) => {
 
 const clearCart = async (req, res, next) => {
   try {
-    const result = await service.clearCart(req.params.userId);
+    const userId = req.user.sub; // Get the userId from the authenticated user's information
+    const result = await service.clearCart(userId);
     success(res, result);
   } catch (err) {
     next(err);

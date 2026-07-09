@@ -15,7 +15,6 @@ const addToCartRules = [
 ];
 
 const updateCartRules = [
-  body('userId').trim().notEmpty().withMessage('userId is required'),
   body('productId').trim().notEmpty().withMessage('productId is required'),
   body('quantity').isInt({ min: 1 }).withMessage('quantity must be at least 1'),
   handleValidation,
