@@ -36,40 +36,48 @@ const createPayment = async (orderId, userId, paymentMethod) => {
     userId,
     amount: order.totalAmount,
     paymentMethod,
-    transactionId: isCOD ? `COD-${uuidv4().split('-')[0].toUpperCase()}` : null,
-    status: PAYMENT_STATUS.PENDING,
+    transactionId:
+      paymentMethod === 'COD'
+        ? `COD-${uuidv4().split('-')[0].toUpperCase()}`
+        : `DEV-TXN-${uuidv4().split('-')[0].toUpperCase()}`,
+    status: PAYMENT_STATUS.PAID,
     createdAt: now,
   };
 
   await docClient.send(new PutCommand({ TableName: PAYMENTS_TABLE, Item: payment }));
   console.log(`[Payment] Created | paymentId: ${payment.paymentid} | orderId: ${orderId} | userId: ${userId} | method: ${paymentMethod} | amount: ${payment.amount} | timestamp: ${now}`);
+  // Development Mode
+  // Every payment is treated as successful immediately.
 
-  if (isCOD) {
-    // COD is confirmed immediately — no payment gateway involved.
-    // Treat as PAID synchronously.
-    // Update payment record to PAID first
-    await docClient.send(
-      new UpdateCommand({
-        TableName: PAYMENTS_TABLE,
-        Key: { paymentid: payment.paymentid },
-        UpdateExpression: 'SET #status = :status, updatedAt = :at',
-        ExpressionAttributeNames: { '#status': 'status' },
-        ExpressionAttributeValues: {
-          ':status': PAYMENT_STATUS.PAID,
-          ':at': new Date().toISOString(),
-        },
-      })
-    );
-    payment.status = PAYMENT_STATUS.PAID;
-    console.log(`[Payment] COD confirmed | paymentId: ${payment.paymentid} | orderId: ${orderId} | timestamp: ${new Date().toISOString()}`);
+  await docClient.send(
+    new UpdateCommand({
+      TableName: PAYMENTS_TABLE,
+      Key: { paymentid: payment.paymentid },
+      UpdateExpression: 'SET #status = :status, updatedAt = :at',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+      },
+      ExpressionAttributeValues: {
+        ':status': PAYMENT_STATUS.PAID,
+        ':at': new Date().toISOString(),
+      },
+    })
+  );
 
-    try {
-      console.log('[Payment] Payment Updated');
-      console.log('[SNS] Publishing PAYMENT_SUCCESS');
-      await publishOrderEvent('PAYMENT_SUCCESS', payment);
-    } catch (err) {
-      console.error('[SNS] Publish failed', err);
-    }
+  payment.status = PAYMENT_STATUS.PAID;
+
+  console.log(
+    `[Payment] Payment confirmed | paymentId: ${payment.paymentid} | orderId: ${orderId} | paymentMethod: ${paymentMethod}`
+  );
+
+  try {
+    console.log('[SNS] Publishing PAYMENT_SUCCESS');
+
+    await publishOrderEvent('PAYMENT_SUCCESS', payment);
+
+    console.log('[SNS] PAYMENT_SUCCESS published successfully');
+  } catch (err) {
+    console.error('[SNS] Publish failed:', err);
   }
 
   return payment;
@@ -110,13 +118,10 @@ const updatePaymentStatus = async (paymentid, status, transactionId) => {
 
   // ── PAID ──────────────────────────────────────────────────────────────────
   if (status === PAYMENT_STATUS.PAID) {
-    if (!transactionId && payment.paymentMethod !== 'COD')
-      throw Object.assign(
-        new Error('transactionId is required for Card/UPI/NetBanking payment'),
-        { statusCode: 400 }
-      );
-
-    const txnId = transactionId || payment.transactionId;
+    const txnId =
+      transactionId ||
+      payment.transactionId ||
+      `DEV-TXN-${uuidv4().split('-')[0].toUpperCase()}`;
 
     // Update payment record first — payment is confirmed regardless of what
     // happens downstream. If inventory update fails, the payment stays PAID
