@@ -10,7 +10,6 @@ const handleValidation = (req, res, next) => {
 
 const createPaymentRules = [
   body('orderId').trim().notEmpty().withMessage('orderId is required'),
-  body('userId').trim().notEmpty().withMessage('userId is required'),
   body('paymentMethod')
     .trim()
     .notEmpty()
