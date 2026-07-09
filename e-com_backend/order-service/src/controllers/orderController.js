@@ -4,7 +4,8 @@ const { success, error } = require('../utils/responseHandler');
 
 const createOrder = async (req, res, next) => {
   try {
-    const { userId, email, shippingAddress, paymentMethod } = req.body;
+    const {email, shippingAddress, paymentMethod } = req.body;
+    const userId = req.user.sub; // Get the userId from the authenticated user's information
     const order = await service.createOrder(userId, email, shippingAddress, paymentMethod);
     success(res, order, 201);
   } catch (err) {

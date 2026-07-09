@@ -9,7 +9,7 @@ const INVENTORY_URL = process.env.INVENTORY_SERVICE_URL || 'http://localhost:500
 const checkStock = async (productId, quantity) => {
   try {
     const { data } = await axios.get(
-      `${INVENTORY_URL}/api/inventory/check/${productId}?quantity=${quantity}`
+      `${INVENTORY_URL}/api/v1/inventory/check/${productId}?quantity=${quantity}`
     );
     return data?.data || null;
   } catch (err) {
@@ -23,7 +23,7 @@ const checkStock = async (productId, quantity) => {
  * Calls POST /api/inventory/reserve — internal, service-to-service only.
  */
 const reserveStock = async (productId, quantity, referenceId) => {
-  const { data } = await axios.post(`${INVENTORY_URL}/api/inventory/reserve`, {
+  const { data } = await axios.post(`${INVENTORY_URL}/api/v1/inventory/reserve`, {
     productId,
     quantity,
     referenceId,
@@ -37,7 +37,7 @@ const reserveStock = async (productId, quantity, referenceId) => {
  */
 const releaseStock = async (productId, quantity, referenceId) => {
   try {
-    const { data } = await axios.post(`${INVENTORY_URL}/api/inventory/release`, {
+    const { data } = await axios.post(`${INVENTORY_URL}/api/v1/inventory/release`, {
       productId,
       quantity,
       referenceId,
