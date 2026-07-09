@@ -1,0 +1,28 @@
+service: cognito-trigger-service
+
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  region: ${env:AWS_REGION, 'ap-southeast-1'}
+  stage: ${env:STAGE, 'dev'}
+  environment:
+    AWS_REGION: ${env:AWS_REGION, 'ap-southeast-1'}
+    COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID}
+    DEFAULT_GROUP: ${env:DEFAULT_GROUP, 'Customer'}
+    LOG_LEVEL: ${env:LOG_LEVEL, 'INFO'}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - cognito-idp:AdminAddUserToGroup
+          Resource:
+            - arn:aws:cognito-idp:${self:provider.region}:*:userpool/${env:COGNITO_USER_POOL_ID}
+
+functions:
+  postConfirmationTrigger:
+    handler: lambda.handler
+    memorySize: 256
+    timeout: 30
