@@ -3,6 +3,7 @@ const { success, error } = require('../utils/responseHandler');
 
 const getProducts = async (req, res, next) => {
   try {
+    console.log(req.user);
     const { products, meta } = await service.getAllProducts(req.query);
     success(res, products, 200, meta);
   } catch (err) {
