@@ -9,7 +9,7 @@ const PRODUCT_SERVICE_URL = process.env.PRODUCT_SERVICE_URL || 'http://localhost
  */
 const getProduct = async (productId) => {
   try {
-    const { data } = await axios.get(`${PRODUCT_SERVICE_URL}/api/products/${productId}`);
+    const { data } = await axios.get(`${PRODUCT_SERVICE_URL}/api/v1/products/${productId}`);
     return data?.data || null;
   } catch (err) {
     if (err.response?.status === 404) return null;
