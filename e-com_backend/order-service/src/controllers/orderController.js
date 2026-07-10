@@ -1,13 +1,23 @@
 const service = require('../services/orderService');
 const { expirePendingOrders } = require('../services/orderExpirationService');
 const { success, error } = require('../utils/responseHandler');
+const { getProfile, updateProfile} = require('../utils/userApi');
 
 const createOrder = async (req, res, next) => {
   try {
-    const {email, shippingAddress, paymentMethod } = req.body;
-    const userId = req.user.sub; // Get the userId from the authenticated user's information
+    const { email, shippingAddress, paymentMethod } = req.body;
+
+    const userId = req.user.sub;
     const token = req.headers.authorization;
-    const order = await service.createOrder(userId, email, shippingAddress, paymentMethod, token);
+
+    const order = await service.createOrder(
+      userId,
+      email,
+      shippingAddress,
+      paymentMethod,
+      token
+    );
+
     success(res, order, 201);
   } catch (err) {
     next(err);

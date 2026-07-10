@@ -3,6 +3,8 @@ const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk
 const { docClient, ORDERS_TABLE } = require('../utils/fileHandler');
 const { getCartByUserId, getProductById, clearCart } = require('../utils/cartApi');
 const { checkStock, reserveStock, releaseStock } = require('../utils/inventoryApi');
+const { getProfile, updateProfile } = require('../utils/userApi');
+
 const {
   ORDER_STATUS,
   PAYMENT_STATUS,
@@ -25,6 +27,40 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
   if (!cart) throw Object.assign(new Error('Cart not found for this user'), { statusCode: 404 });
   if (!cart.items || cart.items.length === 0)
     throw Object.assign(new Error('Cart is empty'), { statusCode: 400 });
+
+  // ── Step 2: Sync user profile (only if profile is incomplete) ───────────────
+
+const profile = await getProfile(token);
+
+const isProfileIncomplete =
+  !profile.fullName ||
+  !profile.phone ||
+  !profile.address?.address ||
+  !profile.address?.city ||
+  !profile.address?.state ||
+  !profile.address?.pincode;
+
+if (isProfileIncomplete) {
+  console.log(`[Order] Updating user profile for ${userId}`);
+
+  await updateProfile(
+    {
+      fullName: shippingAddress.fullName,
+      phone: shippingAddress.phone,
+      address: {
+        fullName: shippingAddress.fullName,
+        phone: shippingAddress.phone,
+        address: shippingAddress.address,
+        city: shippingAddress.city,
+        state: shippingAddress.state,
+        pincode: shippingAddress.pincode,
+      },
+    },
+    token
+  );
+
+  console.log(`[Order] User profile updated successfully`);
+}
 
   // ── Step 2: Validate products and stock availability ───────────────────────
   const stockErrors = [];
