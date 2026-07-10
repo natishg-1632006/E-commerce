@@ -10,6 +10,7 @@ const {
 
 const authMiddleware = require('../middleware/authMiddleware');
 const authorize = require('../middleware/roleMiddleware');
+const serviceAuthMiddleware = require('../middleware/serviceAuthMiddleware');
 
 // =======================================================
 // Customer & Admin
@@ -99,18 +100,21 @@ router.post(
 
 router.post(
   '/reserve',
+  serviceAuthMiddleware,
   reserveRules,
   ctrl.reserveStock
 );
 
 router.post(
   '/release',
+  serviceAuthMiddleware,
   reserveRules,
   ctrl.releaseStock
 );
 
 router.patch(
   '/reduce-stock',
+  serviceAuthMiddleware,
   reduceStockRules,
   ctrl.reduceStock
 );

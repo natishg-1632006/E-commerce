@@ -10,7 +10,6 @@ const handleValidation = (req, res, next) => {
 };
 
 const createOrderRules = [
-  body('userId').trim().notEmpty().withMessage('userId is required'),
   body('email').trim().notEmpty().withMessage('email is required').isEmail().withMessage('email must be a valid email address'),
   body('shippingAddress.fullName').trim().notEmpty().withMessage('fullName is required'),
   body('shippingAddress.phone').trim().notEmpty().withMessage('phone is required'),

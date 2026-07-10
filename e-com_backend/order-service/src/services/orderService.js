@@ -19,7 +19,7 @@ const getExpiresAt = () => {
 
 // ─── Create Order ─────────────────────────────────────────────────────────────
 
-const createOrder = async (userId, email, shippingAddress, paymentMethod) => {
+const createOrder = async (userId, email, shippingAddress, paymentMethod, token) => {
   // ── Step 1: Fetch and validate cart ────────────────────────────────────────
   const cart = await getCartByUserId(userId);
   if (!cart) throw Object.assign(new Error('Cart not found for this user'), { statusCode: 404 });
@@ -39,7 +39,7 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod) => {
         return null;
       }
 
-      const stockInfo = await checkStock(item.productId, item.quantity);
+      const stockInfo = await checkStock(item.productId, item.quantity, token);
       if (!stockInfo) {
         stockErrors.push(`No inventory record found for "${product.name}"`);
         return null;

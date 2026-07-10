@@ -6,7 +6,8 @@ const createOrder = async (req, res, next) => {
   try {
     const {email, shippingAddress, paymentMethod } = req.body;
     const userId = req.user.sub; // Get the userId from the authenticated user's information
-    const order = await service.createOrder(userId, email, shippingAddress, paymentMethod);
+    const token = req.headers.authorization;
+    const order = await service.createOrder(userId, email, shippingAddress, paymentMethod, token);
     success(res, order, 201);
   } catch (err) {
     next(err);

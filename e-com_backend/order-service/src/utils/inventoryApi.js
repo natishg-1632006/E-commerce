@@ -1,52 +1,94 @@
 const axios = require('axios');
 
-const INVENTORY_URL = process.env.INVENTORY_SERVICE_URL || 'http://localhost:5005';
+const INVENTORY_URL =
+  process.env.INVENTORY_SERVICE_URL || 'http://localhost:5005';
 
 /**
- * Check available stock for a single product via Inventory Service.
- * Used during order creation to validate stock before confirming.
+ * Check available stock
+ * Customer -> Order Service -> Inventory Service
+ * Uses Cognito JWT
  */
-const checkStock = async (productId, quantity) => {
+const checkStock = async (productId, quantity, token) => {
   try {
     const { data } = await axios.get(
-      `${INVENTORY_URL}/api/v1/inventory/check/${productId}?quantity=${quantity}`
+      `${INVENTORY_URL}/api/v1/inventory/check/${productId}?quantity=${quantity}`,
+      {
+        headers: {
+          Authorization: token,
+        },
+      }
     );
+
     return data?.data || null;
   } catch (err) {
     if (err.response?.status === 404) return null;
-    throw new Error(`Inventory Service unreachable: ${err.message}`);
+
+    throw new Error(
+      `Inventory Service unreachable: ${
+        err.response?.data?.message || err.message
+      }`
+    );
   }
 };
 
 /**
- * Reserve stock for a single product during order creation.
- * Calls POST /api/inventory/reserve — internal, service-to-service only.
+ * Reserve Stock
+ * Internal API
+ * Uses x-service-key
  */
 const reserveStock = async (productId, quantity, referenceId) => {
-  const { data } = await axios.post(`${INVENTORY_URL}/api/v1/inventory/reserve`, {
-    productId,
-    quantity,
-    referenceId,
-  });
+  const { data } = await axios.post(
+    `${INVENTORY_URL}/api/v1/inventory/reserve`,
+    {
+      productId,
+      quantity,
+      referenceId,
+    },
+    {
+      headers: {
+        'x-service-key': process.env.INTERNAL_SERVICE_KEY,
+      },
+    }
+  );
+
   return data?.data || null;
 };
 
 /**
- * Release reserved stock — called on reservation rollback if a later item fails.
- * Calls POST /api/inventory/release — internal, service-to-service only.
+ * Release Stock
+ * Internal API
+ * Uses x-service-key
  */
 const releaseStock = async (productId, quantity, referenceId) => {
   try {
-    const { data } = await axios.post(`${INVENTORY_URL}/api/v1/inventory/release`, {
-      productId,
-      quantity,
-      referenceId,
-    });
+    const { data } = await axios.post(
+      `${INVENTORY_URL}/api/v1/inventory/release`,
+      {
+        productId,
+        quantity,
+        referenceId,
+      },
+      {
+        headers: {
+          'x-service-key': process.env.INTERNAL_SERVICE_KEY,
+        },
+      }
+    );
+
     return data?.data || null;
   } catch (err) {
-    console.warn(`[Inventory Release Failed] Product: ${productId} | Error: ${err.message}`);
+    console.warn(
+      `[Inventory Release Failed] Product: ${productId} | Error: ${
+        err.response?.data?.message || err.message
+      }`
+    );
+
     return null;
   }
 };
 
-module.exports = { checkStock, reserveStock, releaseStock };
+module.exports = {
+  checkStock,
+  reserveStock,
+  releaseStock,
+};
