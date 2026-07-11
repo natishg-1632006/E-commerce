@@ -15,7 +15,7 @@ const {
 const { docClient, TABLE_NAME } = require('../utils/fileHandler');
 
 const getAllProducts = async (query) => {
-  const {  search, category, brand, minPrice, maxPrice, sort, order, page, limit } = query;
+  const { search, category, brand, minPrice, maxPrice, sort, order, page, limit } = query;
 
   const expressions = [];
   const attrNames = {};
@@ -67,39 +67,39 @@ const getAllProducts = async (query) => {
   }
 
   if (sort) {
-  switch (sort) {
-    case 'priceAsc':
-      products.sort((a, b) => a.price - b.price);
-      break;
+    switch (sort) {
+      case 'priceAsc':
+        products.sort((a, b) => a.price - b.price);
+        break;
 
-    case 'priceDesc':
-      products.sort((a, b) => b.price - a.price);
-      break;
+      case 'priceDesc':
+        products.sort((a, b) => b.price - a.price);
+        break;
 
-    case 'latest':
-      products.sort(
-        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-      );
-      break;
+      case 'latest':
+        products.sort(
+          (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+        );
+        break;
 
-    case 'oldest':
-      products.sort(
-        (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
-      );
-      break;
+      case 'oldest':
+        products.sort(
+          (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+        );
+        break;
 
-    case 'nameAsc':
-      products.sort((a, b) => a.name.localeCompare(b.name));
-      break;
+      case 'nameAsc':
+        products.sort((a, b) => a.name.localeCompare(b.name));
+        break;
 
-    case 'nameDesc':
-      products.sort((a, b) => b.name.localeCompare(a.name));
-      break;
+      case 'nameDesc':
+        products.sort((a, b) => b.name.localeCompare(a.name));
+        break;
 
-    default:
-      break;
+      default:
+        break;
+    }
   }
-}
 
   const total = products.length;
   const currentPage = parseInt(page) || 1;
@@ -128,6 +128,8 @@ const createProduct = async (data) => {
     price: parseFloat(data.price),
     images: data.images || [],
     specifications: data.specifications || {},
+    featured: data.featured || false,
+    status: data.status || "ACTIVE",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -183,6 +185,27 @@ const updateProduct = async (id, data) => {
     })
   );
   return Attributes;
+};
+
+const getFeaturedProducts = async () => {
+  const { Items = [] } = await docClient.send(
+    new ScanCommand({
+      TableName: TABLE_NAME,
+      FilterExpression: '#featured = :featured AND #status = :status',
+      ExpressionAttributeNames: {
+        '#featured': 'featured',
+        '#status': 'status',
+      },
+      ExpressionAttributeValues: {
+        ':featured': true,
+        ':status': 'ACTIVE',
+      },
+    })
+  );
+
+  return Items.sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
 };
 
 const deleteProduct = async (id) => {
@@ -275,4 +298,4 @@ const generateUploadUrls = async (files) => {
   };
 };
 
-module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, generateUploadUrl, generateUploadUrls };
+module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, getFeaturedProducts, generateUploadUrl, generateUploadUrls };

@@ -22,6 +22,13 @@ router.get(
 );
 
 router.get(
+  '/featured',
+  authMiddleware,
+  authorize('Admin', 'Customer'),
+  controller.getFeaturedProducts
+);
+
+router.get(
   '/search',
   authMiddleware,
   authorize('Admin', 'Customer'),

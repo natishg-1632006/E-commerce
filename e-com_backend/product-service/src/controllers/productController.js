@@ -11,6 +11,15 @@ const getProducts = async (req, res, next) => {
   }
 };
 
+const getFeaturedProducts = async (req, res, next) => {
+  try {
+    const products = await service.getFeaturedProducts();
+    success(res, products);
+  } catch (err) {
+    next(err);
+  }
+};
+
 const getProduct = async (req, res, next) => {
   try {
     const product = await service.getProductById(req.params.id);
@@ -77,4 +86,4 @@ const generateUploadUrls = async (req, res, next) => {
   }
 };
 
-module.exports = { getProducts, getProduct, createProduct, updateProduct, deleteProduct,   generateUploadUrl, generateUploadUrls};
+module.exports = { getProducts, getFeaturedProducts, getProduct, createProduct, updateProduct, deleteProduct,   generateUploadUrl, generateUploadUrls};

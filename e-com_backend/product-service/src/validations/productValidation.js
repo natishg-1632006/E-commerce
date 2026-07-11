@@ -35,6 +35,8 @@ const updateRules = [
   body('availableStock').not().exists().withMessage('availableStock is not allowed — use Inventory Service'),
   body('reservedStock').not().exists().withMessage('reservedStock is not allowed — use Inventory Service'),
   body('quantity').not().exists().withMessage('quantity is not allowed — use Inventory Service'),
+  body("featured").optional().isBoolean().withMessage("featured must be true or false"),
+  body("status").optional().isIn(["ACTIVE","OUT_OF_STOCK","COMING_SOON","DISCONTINUED",]).withMessage("Invalid product status"),
   handleValidation,
 ];
 
