@@ -165,6 +165,60 @@ const createInventory = async (data) => {
   return inventory;
 };
 
+const processProductCreatedEvent = async ({ message }) => {
+  if (!message || !message.productId) {
+    const err = new Error("Invalid product event payload");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  console.log(
+    `[Inventory] Creating inventory for product ${message.productId}`
+  );
+
+  // Check if inventory already exists
+  const existing = await getInventoryByProductId(message.productId);
+
+  if (existing) {
+    console.log(
+      `[Inventory] Inventory already exists for ${message.productId}`
+    );
+
+    return {
+      skipped: true,
+    };
+  }
+
+  const inventory = {
+    Inventoryid: uuidv4(),
+
+    productId: message.productId,
+
+    currentStock: 0,
+    reservedStock: 0,
+    availableStock: 0,
+
+    lowStockThreshold: 10,
+
+    status: "Out Of Stock",
+
+    lastUpdated: new Date().toISOString(),
+  };
+
+  await docClient.send(
+    new PutCommand({
+      TableName: TABLE_NAME,
+      Item: inventory,
+    })
+  );
+
+  console.log(
+    `[Inventory] Inventory created automatically for ${message.productId}`
+  );
+
+  return inventory;
+};
+
 const getAllInventory = async () => {
   const { Items = [] } = await docClient.send(new ScanCommand({ TableName: TABLE_NAME }));
   return Items;
@@ -458,4 +512,5 @@ module.exports = {
   getLowStockProducts,
   deleteInventory,
   processPaymentEvent,
+  processProductCreatedEvent
 };

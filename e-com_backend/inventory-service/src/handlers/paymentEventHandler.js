@@ -1,4 +1,4 @@
-const { processPaymentEvent } = require('../services/inventoryService');
+const { processPaymentEvent, processProductCreatedEvent, } = require('../services/inventoryService');
 
 exports.handler = async (event) => {
   const batchItemFailures = [];
@@ -16,15 +16,40 @@ exports.handler = async (event) => {
       const eventType = message.eventType;
       const eventId = message.eventId || message.paymentId;
 
-      console.log(`[Inventory] Received ${eventType}`);
-      const result = await processPaymentEvent({ eventType, eventId, message });
+      console.log(`[Inventory] Received event: ${eventType}`);
+
+      let result;
+
+      switch (eventType) {
+        case 'PAYMENT_SUCCESS':
+        case 'PAYMENT_FAILED':
+        case 'PAYMENT_REFUNDED':
+          result = await processPaymentEvent({
+            eventType,
+            eventId,
+            message,
+          });
+          break;
+
+        case 'PRODUCT_CREATED':
+          result = await processProductCreatedEvent({
+            message,
+          });
+          break;
+
+        default:
+          console.warn(
+            `[Inventory] Unsupported event type: ${eventType}`
+          );
+          continue;
+      }
 
       if (result && result.skipped) {
         console.log('[Inventory] Event already processed');
         continue;
       }
 
-      console.log('[Inventory] Completed');
+      console.log(`[Inventory] ${eventType} processed successfully`);
     } catch (err) {
       console.error('[Inventory] Failed', err);
       batchItemFailures.push({ itemIdentifier: messageId });
