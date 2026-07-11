@@ -27,6 +27,8 @@ const updateRules = [
   body('category').optional().trim().notEmpty().withMessage('Category cannot be empty'),
   body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a non-negative number'),
   body('images').optional().isArray().withMessage('Images must be an array'),
+  body('images.*.url').optional().isURL().withMessage('Each image must have a valid URL'),
+  body('images.*.key').optional().notEmpty().withMessage('Each image must have a valid key'),
   body('specifications').optional().isObject().withMessage('Specifications must be an object'),
   body('stock').not().exists().withMessage('stock is not allowed — use Inventory Service'),
   body('currentStock').not().exists().withMessage('currentStock is not allowed — use Inventory Service'),
