@@ -26,6 +26,28 @@ const publishProductCreated = async (product) => {
   );
 };
 
+const publishProductDeleted = async (product) => {
+  const message = {
+    eventType: "PRODUCT_DELETED",
+    productId: product.productId,
+  };
+
+  await sns.send(
+    new PublishCommand({
+      TopicArn: process.env.PRODUCT_EVENTS_TOPIC_ARN,
+      Subject: "PRODUCT_DELETED",
+      Message: JSON.stringify(message),
+    })
+  );
+
+  console.log(
+    `[SNS] PRODUCT_DELETED published for ${product.productId}`
+  );
+};
+
+
+
 module.exports = {
   publishProductCreated,
+  publishProductDeleted
 };

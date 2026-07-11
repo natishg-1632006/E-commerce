@@ -1,4 +1,4 @@
-const { processPaymentEvent, processProductCreatedEvent, } = require('../services/inventoryService');
+const { processPaymentEvent, processProductCreatedEvent, processProductDeletedEvent } = require('../services/inventoryService');
 
 exports.handler = async (event) => {
   const batchItemFailures = [];
@@ -35,6 +35,12 @@ exports.handler = async (event) => {
           result = await processProductCreatedEvent({
             message,
           });
+          break;
+
+        case "PRODUCT_DELETED":
+          result =await processProductDeletedEvent({
+              message,
+            });
           break;
 
         default:

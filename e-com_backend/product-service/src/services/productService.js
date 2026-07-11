@@ -3,7 +3,7 @@ const { PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { s3 } = require("../utils/s3Client");
 const { deleteImageFromS3 } = require('../utils/s3Helper');
-const { publishProductCreated } = require('../utils/productPublisher');
+const { publishProductCreated, publishProductDeleted } = require('../utils/productPublisher');
 
 const {
   PutCommand,
@@ -133,32 +133,32 @@ const createProduct = async (data) => {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  
- await docClient.send(
-  new PutCommand({
-    TableName: TABLE_NAME,
-    Item: product,
-  })
-);
 
-// Publish event after product is successfully saved
-try {
-  await publishProductCreated(product);
-
-  console.log(
-    `[Product] PRODUCT_CREATED event published for ${product.productId}`
-  );
-} catch (err) {
-  console.error(
-    `[Product] Failed to publish PRODUCT_CREATED event`,
-    err
+  await docClient.send(
+    new PutCommand({
+      TableName: TABLE_NAME,
+      Item: product,
+    })
   );
 
-  // Don't fail the API request if SNS publishing fails.
-  // The product has already been created successfully.
-}
+  // Publish event after product is successfully saved
+  try {
+    await publishProductCreated(product);
 
-return product;
+    console.log(
+      `[Product] PRODUCT_CREATED event published for ${product.productId}`
+    );
+  } catch (err) {
+    console.error(
+      `[Product] Failed to publish PRODUCT_CREATED event`,
+      err
+    );
+
+    // Don't fail the API request if SNS publishing fails.
+    // The product has already been created successfully.
+  }
+
+  return product;
   return product;
 };
 
@@ -257,6 +257,20 @@ const deleteProduct = async (id) => {
       },
     })
   );
+
+  // Publish PRODUCT_DELETED event
+  try {
+    await publishProductDeleted(existing);
+
+    console.log(
+      `[Product] PRODUCT_DELETED published for ${existing.productId}`
+    );
+  } catch (err) {
+    console.error(
+      "[Product] Failed to publish PRODUCT_DELETED",
+      err
+    );
+  }
 
   return existing;
 };

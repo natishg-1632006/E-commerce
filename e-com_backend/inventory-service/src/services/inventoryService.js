@@ -452,10 +452,10 @@ const reduceStock = async (productId, quantity, referenceId = '') => {
   }
 
   const previousStock = inventory.currentStock;
-  const newCurrent   = inventory.currentStock - quantity;                    // 30 - 1 = 29
-  const newReserved  = Math.max(0, inventory.reservedStock - quantity);      //  1 - 1 =  0
+  const newCurrent = inventory.currentStock - quantity;                    // 30 - 1 = 29
+  const newReserved = Math.max(0, inventory.reservedStock - quantity);      //  1 - 1 =  0
   const newAvailable = newCurrent - newReserved;                             // 29 - 0 = 29
-  const newStatus    = deriveStatus(newAvailable, inventory.lowStockThreshold);
+  const newStatus = deriveStatus(newAvailable, inventory.lowStockThreshold);
 
   console.log(`[DEBUG][InventoryService] reduceStock | productId: ${productId} | BEFORE: currentStock=${inventory.currentStock} reservedStock=${inventory.reservedStock} availableStock=${inventory.availableStock}`);
   console.log(`[DEBUG][InventoryService] reduceStock | WRITING: currentStock=${newCurrent} reservedStock=${newReserved} availableStock=${newAvailable} status=${newStatus}`);
@@ -498,6 +498,45 @@ const deleteInventory = async (productId) => {
   return existing;
 };
 
+const processProductDeletedEvent = async ({ message }) => {
+
+  if (!message.productId) {
+    throw new Error("Missing productId");
+  }
+
+  const inventory = await getInventoryByProductId(
+    message.productId
+  );
+
+  if (!inventory) {
+
+    console.log(
+      `[Inventory] Inventory already removed`
+    );
+
+    return {
+      skipped: true,
+    };
+  }
+
+  await docClient.send(
+    new DeleteCommand({
+      TableName: TABLE_NAME,
+      Key: {
+        Inventoryid: inventory.Inventoryid,
+      },
+    })
+  );
+
+  console.log(
+    `[Inventory] Deleted inventory for ${message.productId}`
+  );
+
+  return {
+    success: true,
+  };
+};
+
 module.exports = {
   createInventory,
   getAllInventory,
@@ -512,5 +551,6 @@ module.exports = {
   getLowStockProducts,
   deleteInventory,
   processPaymentEvent,
-  processProductCreatedEvent
+  processProductCreatedEvent,
+  processProductDeletedEvent
 };
