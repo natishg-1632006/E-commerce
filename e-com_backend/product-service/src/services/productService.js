@@ -15,7 +15,7 @@ const {
 const { docClient, TABLE_NAME } = require('../utils/fileHandler');
 
 const getAllProducts = async (query) => {
-  const { q, category, brand, minPrice, maxPrice, sortBy, order, page, limit } = query;
+  const {  search, category, brand, minPrice, maxPrice, sort, order, page, limit } = query;
 
   const expressions = [];
   const attrNames = {};
@@ -55,8 +55,8 @@ const getAllProducts = async (query) => {
 
   let products = Items;
 
-  if (q) {
-    const term = q.toLowerCase();
+  if (search) {
+    const term = search.toLowerCase();
     products = products.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
@@ -66,13 +66,40 @@ const getAllProducts = async (query) => {
     );
   }
 
-  if (sortBy) {
-    const dir = order === 'desc' ? -1 : 1;
-    products.sort((a, b) => {
-      if (typeof a[sortBy] === 'string') return a[sortBy].localeCompare(b[sortBy]) * dir;
-      return (a[sortBy] - b[sortBy]) * dir;
-    });
+  if (sort) {
+  switch (sort) {
+    case 'priceAsc':
+      products.sort((a, b) => a.price - b.price);
+      break;
+
+    case 'priceDesc':
+      products.sort((a, b) => b.price - a.price);
+      break;
+
+    case 'latest':
+      products.sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+      );
+      break;
+
+    case 'oldest':
+      products.sort(
+        (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+      );
+      break;
+
+    case 'nameAsc':
+      products.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+
+    case 'nameDesc':
+      products.sort((a, b) => b.name.localeCompare(a.name));
+      break;
+
+    default:
+      break;
   }
+}
 
   const total = products.length;
   const currentPage = parseInt(page) || 1;
