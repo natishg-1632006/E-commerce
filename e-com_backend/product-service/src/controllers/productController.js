@@ -65,4 +65,16 @@ const generateUploadUrl = async (req, res, next) => {
   }
 };
 
-module.exports = { getProducts, getProduct, createProduct, updateProduct, deleteProduct,   generateUploadUrl, };
+const generateUploadUrls = async (req, res, next) => {
+  try {
+    const { files } = req.body;
+
+    const result = await service.generateUploadUrls(files);
+
+    success(res, result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getProducts, getProduct, createProduct, updateProduct, deleteProduct,   generateUploadUrl, generateUploadUrls};

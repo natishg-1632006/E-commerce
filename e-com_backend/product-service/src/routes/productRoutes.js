@@ -66,4 +66,11 @@ router.delete(
 //   controller.deleteProductImage
 // );
 
+router.post(
+  '/upload-urls',
+  authMiddleware,
+  authorize('Admin'),
+  controller.generateUploadUrls
+);
+
 module.exports = router;

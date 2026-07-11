@@ -196,7 +196,7 @@ const generateUploadUrl = async (fileName, contentType) => {
   const command = new PutObjectCommand({
     Bucket: process.env.S3_BUCKET_NAME,
     Key: key,
-    ContentType: contentType,
+    ContentType: 'image/*'
   });
 
   const uploadUrl = await getSignedUrl(s3, command, {
@@ -212,4 +212,40 @@ const generateUploadUrl = async (fileName, contentType) => {
   };
 };
 
-module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, generateUploadUrl };
+const path = require('path');
+
+const generateUploadUrls = async (files) => {
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new Error('files array is required');
+  }
+
+  const uploads = [];
+
+  for (const fileName of files) {
+    const extension = path.extname(fileName);
+
+    const key = `products/${uuidv4()}${extension}`;
+
+    const command = new PutObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: key,
+      ContentType: 'image/*',
+    });
+
+    const uploadUrl = await getSignedUrl(s3, command, {
+      expiresIn: 300,
+    });
+
+    uploads.push({
+      uploadUrl,
+      imageUrl: `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`,
+      key,
+    });
+  }
+
+  return {
+    images: uploads,
+  };
+};
+
+module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, generateUploadUrl, generateUploadUrls };
