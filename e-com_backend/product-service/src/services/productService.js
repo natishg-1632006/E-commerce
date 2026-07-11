@@ -1,7 +1,9 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-const s3 = require("../utils/s3Client");
+const { s3 } = require("../utils/s3Client");
+const { deleteImageFromS3 } = require('../utils/s3Helper');
+
 
 const {
   PutCommand,
@@ -110,6 +112,26 @@ const updateProduct = async (id, data) => {
   const existing = await getProductById(id);
   if (!existing) return null;
 
+  if (data.images && Array.isArray(data.images)) {
+
+    const oldImages = existing.images || [];
+    const newImages = data.images || [];
+
+    const newKeys = newImages.map(image => image.key);
+
+    const removedImages = oldImages.filter(
+      image => !newKeys.includes(image.key)
+    );
+
+    for (const image of removedImages) {
+      try {
+        await deleteImageFromS3(image.key);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  }
+
   const immutable = ['productId', 'createdAt'];
   const stockFields = ['stock', 'currentStock', 'availableStock', 'reservedStock', 'quantity'];
   [...immutable, ...stockFields].forEach((key) => delete data[key]);
@@ -137,9 +159,30 @@ const updateProduct = async (id, data) => {
 };
 
 const deleteProduct = async (id) => {
+  // Step 1: Check if product exists
   const existing = await getProductById(id);
+
   if (!existing) return null;
-  await docClient.send(new DeleteCommand({ TableName: TABLE_NAME, Key: { productId: id } }));
+
+  // Step 2: Delete all images from S3
+  if (existing.images && existing.images.length > 0) {
+    for (const image of existing.images) {
+      if (image.key) {
+        await deleteImageFromS3(image.key);
+      }
+    }
+  }
+
+  // Step 3: Delete product from DynamoDB
+  await docClient.send(
+    new DeleteCommand({
+      TableName: TABLE_NAME,
+      Key: {
+        productId: id,
+      },
+    })
+  );
+
   return existing;
 };
 
