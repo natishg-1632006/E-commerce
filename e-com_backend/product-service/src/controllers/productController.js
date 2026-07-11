@@ -50,4 +50,19 @@ const deleteProduct = async (req, res, next) => {
   }
 };
 
-module.exports = { getProducts, getProduct, createProduct, updateProduct, deleteProduct };
+const generateUploadUrl = async (req, res, next) => {
+  try {
+    const { fileName, contentType } = req.body;
+
+    const data = await service.generateUploadUrl(fileName, contentType);
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getProducts, getProduct, createProduct, updateProduct, deleteProduct,   generateUploadUrl, };

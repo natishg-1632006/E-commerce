@@ -30,6 +30,13 @@ router.get(
 
 // Admin Only Routes
 router.post(
+  '/upload-url',
+  authMiddleware,
+  authorize('Admin'),
+  controller.generateUploadUrl
+);
+
+router.post(
   '/',
   authMiddleware,
   authorize('Admin'),
@@ -51,5 +58,12 @@ router.delete(
   authorize('Admin'),
   controller.deleteProduct
 );
+
+// router.delete(
+//   '/:id/image',
+//   authMiddleware,
+//   authorize('Admin'),
+//   controller.deleteProductImage
+// );
 
 module.exports = router;

@@ -1,4 +1,8 @@
 const { v4: uuidv4 } = require('uuid');
+const { PutObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+const s3 = require("../utils/s3Client");
+
 const {
   PutCommand,
   GetCommand,
@@ -139,4 +143,30 @@ const deleteProduct = async (id) => {
   return existing;
 };
 
-module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct };
+const generateUploadUrl = async (fileName, contentType) => {
+  const imageId = uuidv4();
+
+  const extension = fileName.split(".").pop();
+
+  const key = `products/${imageId}.${extension}`;
+
+  const command = new PutObjectCommand({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key: key,
+    ContentType: contentType,
+  });
+
+  const uploadUrl = await getSignedUrl(s3, command, {
+    expiresIn: 300, // 5 minutes
+  });
+
+  const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+
+  return {
+    uploadUrl,
+    imageUrl,
+    key,
+  };
+};
+
+module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, generateUploadUrl };
