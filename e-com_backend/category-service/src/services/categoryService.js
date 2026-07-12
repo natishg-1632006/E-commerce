@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-
+const { publishCategoryUpdated } = require("../utils/snsPublisher");
 const {
     PutCommand,
     ScanCommand,
@@ -207,6 +207,20 @@ const updateCategory = async (id, data) => {
             ReturnValues: "ALL_NEW",
         })
     );
+
+    try {
+        await publishCategoryUpdated(Attributes);
+
+        console.log(
+            `[Category] CATEGORY_UPDATED published for ${Attributes.categoryId}`
+        );
+    } catch (err) {
+        console.error(
+            "[Category] Failed to publish CATEGORY_UPDATED",
+            err
+        );
+    }
+
 
     return Attributes;
 };

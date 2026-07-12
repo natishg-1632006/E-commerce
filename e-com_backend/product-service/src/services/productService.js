@@ -5,7 +5,6 @@ const { s3 } = require("../utils/s3Client");
 const { deleteImageFromS3 } = require('../utils/s3Helper');
 const { publishProductCreated, publishProductDeleted } = require('../utils/productPublisher');
 const { getCategory } = require("../utils/categoryApi");
-
 const {
   PutCommand,
   GetCommand,
@@ -349,4 +348,60 @@ const generateUploadUrls = async (files) => {
   };
 };
 
-module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, getFeaturedProducts, generateUploadUrl, generateUploadUrls };
+const processCategoryEvent = async (message) => {
+  switch (message.eventType) {
+    case "CATEGORY_UPDATED": {
+      const { categoryId, categoryName } = message;
+
+      console.log(
+        `[Product] Updating products for category ${categoryId}`
+      );
+
+      // Find all products in this category
+      const { Items } = await docClient.send(
+        new ScanCommand({
+          TableName: TABLE_NAME,
+          FilterExpression: "categoryId = :categoryId",
+          ExpressionAttributeValues: {
+            ":categoryId": categoryId,
+          },
+        })
+      );
+
+      console.log(
+        `[Product] Found ${Items.length} products`
+      );
+
+      // Update every product
+      for (const product of Items) {
+        await docClient.send(
+          new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: {
+              productId: product.productId,
+            },
+            UpdateExpression:
+              "SET categoryName = :name, updatedAt = :updatedAt",
+            ExpressionAttributeValues: {
+              ":name": categoryName,
+              ":updatedAt": new Date().toISOString(),
+            },
+          })
+        );
+
+        console.log(
+          `[Product] Updated ${product.productId}`
+        );
+      }
+
+      break;
+    }
+
+    default:
+      console.log(
+        `[Product] Unknown event ${message.eventType}`
+      );
+  }
+};
+
+module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, getFeaturedProducts, generateUploadUrl, generateUploadUrls, processCategoryEvent };
