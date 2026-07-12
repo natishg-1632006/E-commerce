@@ -3,7 +3,8 @@ const { v4: uuidv4 } = require('uuid');
 const {
   PutCommand,
   ScanCommand,
-  GetCommand
+  GetCommand,
+  UpdateCommand
 } = require('@aws-sdk/lib-dynamodb');
 
 const {
@@ -135,8 +136,50 @@ const getCategoryById = async (id) => {
   return Item || null;
 };
 
+const updateCategory = async (id, data) => {
+
+  const existing = await getCategoryById(id);
+
+  if (!existing) return null;
+
+  delete data.categoryId;
+  delete data.createdAt;
+
+  data.updatedAt = new Date().toISOString();
+
+  const fields = Object.keys(data);
+
+  const updateExpression =
+    "SET " +
+    fields.map((field) => `#${field} = :${field}`).join(", ");
+
+  const expressionNames = {};
+  const expressionValues = {};
+
+  fields.forEach((field) => {
+    expressionNames[`#${field}`] = field;
+    expressionValues[`:${field}`] = data[field];
+  });
+
+  const { Attributes } = await docClient.send(
+    new UpdateCommand({
+      TableName: TABLE_NAME,
+      Key: {
+        categoryId: id,
+      },
+      UpdateExpression: updateExpression,
+      ExpressionAttributeNames: expressionNames,
+      ExpressionAttributeValues: expressionValues,
+      ReturnValues: "ALL_NEW",
+    })
+  );
+
+  return Attributes;
+};
+
 module.exports = {
     createCategory,
     getAllCategories,
-    getCategoryById
+    getCategoryById,
+    updateCategory
 };

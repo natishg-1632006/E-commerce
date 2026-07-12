@@ -39,4 +39,22 @@ const getCategory = async (req, res, next) => {
   }
 };
 
-module.exports = {createCategory, getCategories, getCategory};
+const updateCategory = async (req, res, next) => {
+  try {
+
+    const category = await service.updateCategory(
+      req.params.id,
+      req.body
+    );
+
+    if (!category)
+      return error(res, "Category not found", 404);
+
+    success(res, category);
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = {createCategory, getCategories, getCategory, updateCategory};
