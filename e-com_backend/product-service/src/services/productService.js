@@ -4,6 +4,7 @@ const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { s3 } = require("../utils/s3Client");
 const { deleteImageFromS3 } = require('../utils/s3Helper');
 const { publishProductCreated, publishProductDeleted } = require('../utils/productPublisher');
+const { getCategory } = require("../utils/categoryApi");
 
 const {
   PutCommand,
@@ -117,14 +118,33 @@ const getProductById = async (id) => {
   const { Item } = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { productId: id } }));
   return Item || null;
 };
-
 const createProduct = async (data) => {
+  console.log("STEP 1 - Start createProduct");
+
+  const category = await getCategory(data.categoryId);
+  console.log("STEP 2 - Category validated");
+
+  if (!category) {
+    const err = new Error("Category not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (category.status !== "ACTIVE") {
+    const err = new Error("Category is inactive");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  console.log("STEP 3 - Creating product object");
+
   const product = {
     productId: uuidv4(),
     name: data.name,
     description: data.description,
     brand: data.brand,
-    category: data.category,
+    categoryId: data.categoryId,
+    categoryName: category.name,
     price: parseFloat(data.price),
     images: data.images || [],
     specifications: data.specifications || {},
@@ -134,6 +154,8 @@ const createProduct = async (data) => {
     updatedAt: new Date().toISOString(),
   };
 
+  console.log("STEP 4 - Saving to DynamoDB");
+
   await docClient.send(
     new PutCommand({
       TableName: TABLE_NAME,
@@ -141,24 +163,14 @@ const createProduct = async (data) => {
     })
   );
 
-  // Publish event after product is successfully saved
-  try {
-    await publishProductCreated(product);
+  console.log("STEP 5 - Saved to DynamoDB");
 
-    console.log(
-      `[Product] PRODUCT_CREATED event published for ${product.productId}`
-    );
-  } catch (err) {
-    console.error(
-      `[Product] Failed to publish PRODUCT_CREATED event`,
-      err
-    );
+  console.log("STEP 6 - Publishing SNS");
 
-    // Don't fail the API request if SNS publishing fails.
-    // The product has already been created successfully.
-  }
+  await publishProductCreated(product);
 
-  return product;
+  console.log("STEP 7 - SNS Published");
+
   return product;
 };
 

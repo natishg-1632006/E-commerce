@@ -20,6 +20,11 @@ router.get(
 );
 
 router.get(
+  "/internal/:id",
+  controller.getCategory
+);
+
+router.get(
   "/:id",
   authMiddleware,
   authorize("Admin", "Customer"),
