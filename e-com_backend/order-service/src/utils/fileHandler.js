@@ -5,7 +5,11 @@ const client = new DynamoDBClient({
   region: process.env.AWS_REGION,
 });
 
-const docClient = DynamoDBDocumentClient.from(client);
+const docClient = DynamoDBDocumentClient.from(client, {
+  marshallOptions: {
+    removeUndefinedValues: true,
+  },
+});
 
 const ORDERS_TABLE = process.env.DYNAMODB_TABLE_NAME;
 const CART_TABLE = process.env.CART_TABLE_NAME;

@@ -4,6 +4,7 @@ const { docClient, ORDERS_TABLE } = require('../utils/fileHandler');
 const { getCartByUserId, getProductById, clearCart } = require('../utils/cartApi');
 const { checkStock, reserveStock, releaseStock } = require('../utils/inventoryApi');
 const { getProfile, updateProfile } = require('../utils/userApi');
+const { publishOrderCreated, publishOrderConfirmed } = require("../utils/orderEventPublisher");
 
 const {
   ORDER_STATUS,
@@ -30,37 +31,37 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
 
   // ── Step 2: Sync user profile (only if profile is incomplete) ───────────────
 
-const profile = await getProfile(token);
+  const profile = await getProfile(token);
 
-const isProfileIncomplete =
-  !profile.fullName ||
-  !profile.phone ||
-  !profile.address?.address ||
-  !profile.address?.city ||
-  !profile.address?.state ||
-  !profile.address?.pincode;
+  const isProfileIncomplete =
+    !profile.fullName ||
+    !profile.phone ||
+    !profile.address?.address ||
+    !profile.address?.city ||
+    !profile.address?.state ||
+    !profile.address?.pincode;
 
-if (isProfileIncomplete) {
-  console.log(`[Order] Updating user profile for ${userId}`);
+  if (isProfileIncomplete) {
+    console.log(`[Order] Updating user profile for ${userId}`);
 
-  await updateProfile(
-    {
-      fullName: shippingAddress.fullName,
-      phone: shippingAddress.phone,
-      address: {
+    await updateProfile(
+      {
         fullName: shippingAddress.fullName,
         phone: shippingAddress.phone,
-        address: shippingAddress.address,
-        city: shippingAddress.city,
-        state: shippingAddress.state,
-        pincode: shippingAddress.pincode,
+        address: {
+          fullName: shippingAddress.fullName,
+          phone: shippingAddress.phone,
+          address: shippingAddress.address,
+          city: shippingAddress.city,
+          state: shippingAddress.state,
+          pincode: shippingAddress.pincode,
+        },
       },
-    },
-    token
-  );
+      token
+    );
 
-  console.log(`[Order] User profile updated successfully`);
-}
+    console.log(`[Order] User profile updated successfully`);
+  }
 
   // ── Step 2: Validate products and stock availability ───────────────────────
   const stockErrors = [];
@@ -154,11 +155,37 @@ if (isProfileIncomplete) {
     expiresAt: getExpiresAt(),
     ...(priceChanges.length > 0 && { priceUpdated: true, priceChanges }),
   };
+  console.log("===== ORDER =====");
+  console.log(JSON.stringify(order, null, 2));
+  await docClient.send(
+    new PutCommand({
+      TableName: ORDERS_TABLE,
+      Item: order,
+    })
+  );
+  console.log("Order saved successfully");
 
-  await docClient.send(new PutCommand({ TableName: ORDERS_TABLE, Item: order }));
+  // Publish event
+  try {
+    await publishOrderCreated(order);
+
+    console.log(
+      `[Order] ORDER_CREATED published for ${order.orderid}`
+    );
+  } catch (err) {
+    console.error(
+      "[Order] Failed to publish ORDER_CREATED",
+      err
+    );
+
+    // Do not fail order creation if SNS publish fails
+  }
+
   await clearCart(cart.cartid);
 
-  console.log(`[Order] Created | orderId: ${orderId} | userId: ${userId} | totalAmount: ${totalAmount} | paymentMethod: ${paymentMethod} | expiresAt: ${order.expiresAt} | timestamp: ${now}`);
+  console.log(
+    `[Order] Created | orderId: ${orderId} | userId: ${userId}`
+  );
 
   return order;
 };
@@ -272,6 +299,21 @@ const processPaymentEvent = async ({ eventType, eventId, message }) => {
       ReturnValues: 'ALL_NEW',
     })
   );
+
+  if (eventType === "PAYMENT_SUCCESS") {
+  try {
+    await publishOrderConfirmed(Attributes);
+
+    console.log(
+      `[Order] ORDER_CONFIRMED published for ${Attributes.orderid}`
+    );
+  } catch (err) {
+    console.error(
+      "[Order] Failed to publish ORDER_CONFIRMED",
+      err
+    );
+  }
+}
 
   console.log(`[Order] Updated | orderId: ${message.orderId} | paymentStatus=${paymentStatus} | orderStatus=${orderStatus}`);
   return Attributes;
