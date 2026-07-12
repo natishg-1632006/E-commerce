@@ -57,4 +57,24 @@ const updateCategory = async (req, res, next) => {
   }
 };
 
-module.exports = {createCategory, getCategories, getCategory, updateCategory};
+const generateUploadUrl = async (req, res, next) => {
+  try {
+
+    const { fileName, contentType } = req.body;
+
+    const data =
+      await service.generateCategoryUploadUrl(
+        fileName,
+        contentType
+      );
+
+    success(res, data);
+
+  } catch (err) {
+
+    next(err);
+
+  }
+};
+
+module.exports = {createCategory, getCategories, getCategory, updateCategory, generateUploadUrl};

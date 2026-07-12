@@ -12,6 +12,10 @@ const {
   TABLE_NAME,
 } = require('../utils/fileHandler');
 
+const {
+  generateUploadUrl,
+} = require("../utils/s3Helper");
+
 const createCategory = async (data) => {
 
   const category = {
@@ -177,9 +181,21 @@ const updateCategory = async (id, data) => {
   return Attributes;
 };
 
+const generateCategoryUploadUrl = async (
+  fileName,
+  contentType
+) => {
+  return await generateUploadUrl(
+    fileName,
+    contentType,
+    "categories"
+  );
+};
+
 module.exports = {
     createCategory,
     getAllCategories,
     getCategoryById,
-    updateCategory
+    updateCategory,
+    generateCategoryUploadUrl
 };

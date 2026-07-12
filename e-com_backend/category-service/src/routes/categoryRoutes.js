@@ -34,4 +34,11 @@ router.put(
   controller.updateCategory
 );
 
+router.post(
+  "/upload-url",
+  authMiddleware,
+  authorize("Admin"),
+  controller.generateUploadUrl
+);
+
 module.exports = router;
