@@ -2,9 +2,9 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient, ORDERS_TABLE } = require('../utils/fileHandler');
 const { getCartByUserId, getProductById, clearCart } = require('../utils/cartApi');
-const { checkStock, reserveStock, releaseStock } = require('../utils/inventoryApi');
+const { checkStock, reserveStock, releaseStock, restoreStock } = require('../utils/inventoryApi');
 const { getProfile, updateProfile } = require('../utils/userApi');
-const { publishOrderCreated, publishOrderConfirmed } = require("../utils/orderEventPublisher");
+const { publishOrderCreated, publishOrderConfirmed, publishOrderCancelled } = require("../utils/orderEventPublisher");
 
 const {
   ORDER_STATUS,
@@ -301,19 +301,19 @@ const processPaymentEvent = async ({ eventType, eventId, message }) => {
   );
 
   if (eventType === "PAYMENT_SUCCESS") {
-  try {
-    await publishOrderConfirmed(Attributes);
+    try {
+      await publishOrderConfirmed(Attributes);
 
-    console.log(
-      `[Order] ORDER_CONFIRMED published for ${Attributes.orderid}`
-    );
-  } catch (err) {
-    console.error(
-      "[Order] Failed to publish ORDER_CONFIRMED",
-      err
-    );
+      console.log(
+        `[Order] ORDER_CONFIRMED published for ${Attributes.orderid}`
+      );
+    } catch (err) {
+      console.error(
+        "[Order] Failed to publish ORDER_CONFIRMED",
+        err
+      );
+    }
   }
-}
 
   console.log(`[Order] Updated | orderId: ${message.orderId} | paymentStatus=${paymentStatus} | orderStatus=${orderStatus}`);
   return Attributes;
@@ -365,12 +365,38 @@ const cancelOrder = async (orderid) => {
   // Release reserved inventory before marking the order cancelled.
   // This is critical — without this, stock stays locked forever.
   if (existing.items && existing.items.length > 0) {
-    console.log(`[Order] Releasing reserved stock on cancel | orderId: ${orderid} | userId: ${existing.userId} | items: ${existing.items.length} | timestamp: ${now}`);
-    await Promise.allSettled(
-      existing.items.map((item) => releaseStock(item.productId, item.quantity, orderid))
-    );
-  }
 
+    // Order not paid yet
+    if (existing.orderStatus === ORDER_STATUS.PENDING_PAYMENT) {
+
+      console.log(
+        `[Order] Releasing reserved stock | orderId: ${orderid}`
+      );
+
+      await Promise.all(
+        existing.items.map((item) =>
+          releaseStock(item.productId, item.quantity, orderid)
+        )
+      );
+
+    }
+
+    // Payment completed
+    else if (existing.orderStatus === ORDER_STATUS.PROCESSING) {
+
+      console.log(
+        `[Order] Restoring inventory | orderId: ${orderid}`
+      );
+
+      await Promise.all(
+        existing.items.map((item) =>
+          restoreStock(item.productId, item.quantity, orderid)
+        )
+      );
+
+    }
+
+  }
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: ORDERS_TABLE,
@@ -384,6 +410,19 @@ const cancelOrder = async (orderid) => {
       ReturnValues: 'ALL_NEW',
     })
   );
+
+  try {
+    await publishOrderCancelled(Attributes);
+
+    console.log(
+      `[Order] ORDER_CANCELLED published for ${Attributes.orderid}`
+    );
+  } catch (err) {
+    console.error(
+      "[Order] Failed to publish ORDER_CANCELLED",
+      err
+    );
+  }
 
   console.log(`[Order] Cancelled | orderId: ${orderid} | userId: ${existing.userId} | timestamp: ${now}`);
   return Attributes;

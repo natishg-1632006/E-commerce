@@ -87,8 +87,46 @@ const releaseStock = async (productId, quantity, referenceId) => {
   }
 };
 
+const increaseStock = async (productId, quantity, referenceId) => {
+  const { data } = await axios.post(
+    `${INVENTORY_URL}/api/v1/inventory/increase`,
+    {
+      productId,
+      quantity,
+      reason: `ORDER_CANCELLED:${referenceId}`,
+    },
+    {
+      headers: {
+        "x-service-key": process.env.INTERNAL_SERVICE_KEY,
+      },
+    }
+  );
+
+  return data.data;
+};
+
+const restoreStock = async (productId, quantity, orderId) => {
+  const { data } = await axios.post(
+    `${INVENTORY_URL}/api/v1/inventory/restore`,
+    {
+      productId,
+      quantity,
+      orderId,
+    },
+    {
+      headers: {
+        "x-service-key": process.env.INTERNAL_SERVICE_KEY,
+      },
+    }
+  );
+
+  return data.data;
+};
+
 module.exports = {
   checkStock,
   reserveStock,
   releaseStock,
+  increaseStock,
+  restoreStock
 };

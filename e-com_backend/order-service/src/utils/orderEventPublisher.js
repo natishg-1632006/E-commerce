@@ -13,7 +13,9 @@ const publishOrderCreated = async (order) => {
 
     orderId: order.orderid,
     userId: order.userId,
-
+    items: order.items,
+    paymentMethod: order.paymentMethod,
+    shippingAddress: order.shippingAddress,
     totalAmount: order.totalAmount,
 
     orderStatus: order.orderStatus,
@@ -41,7 +43,8 @@ const publishOrderConfirmed = async (order) => {
 
     orderId: order.orderid,
     userId: order.userId,
-
+    items: order.items,
+    paymentMethod: order.paymentMethod,
     totalAmount: order.totalAmount,
 
     paymentStatus: order.paymentStatus,
@@ -61,7 +64,38 @@ const publishOrderConfirmed = async (order) => {
   );
 };
 
+const publishOrderCancelled = async (order, reason = "USER_CANCELLED") => {
+  const message = {
+    eventType: "ORDER_CANCELLED",
+    eventId: uuidv4(),
+    timestamp: new Date().toISOString(),
+
+    orderId: order.orderid,
+    userId: order.userId,
+
+    totalAmount: order.totalAmount,
+    items: order.items,
+    paymentStatus: order.paymentStatus,
+    orderStatus: order.orderStatus,
+
+    reason,
+  };
+
+  await sns.send(
+    new PublishCommand({
+      TopicArn: process.env.ORDER_EVENTS_TOPIC_ARN,
+      Subject: "ORDER_CANCELLED",
+      Message: JSON.stringify(message),
+    })
+  );
+
+  console.log(
+    `[SNS] ORDER_CANCELLED published for ${order.orderid}`
+  );
+};
+
 module.exports = {
   publishOrderCreated,
   publishOrderConfirmed,
+  publishOrderCancelled,
 };

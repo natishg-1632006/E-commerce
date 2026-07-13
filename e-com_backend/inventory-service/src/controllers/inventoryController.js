@@ -127,6 +127,22 @@ const getLowStockProducts = async (req, res, next) => {
   }
 };
 
+const restoreStock = async (req, res, next) => {
+  try {
+    const { productId, quantity, orderId } = req.body;
+
+    const inventory = await service.restoreStock(
+      productId,
+      parseInt(quantity),
+      orderId
+    );
+
+    success(res, inventory);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   createInventory,
   getAllInventory,
@@ -140,4 +156,5 @@ module.exports = {
   checkStockAvailability,
   getLowStockProducts,
   reduceStock,
+  restoreStock
 };

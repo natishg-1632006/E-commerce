@@ -261,17 +261,19 @@ const increaseStock = async (productId, quantity, reason) => {
 
   const newCurrent = inventory.currentStock + quantity;
   const newAvailable = newCurrent - inventory.reservedStock;
+
   const status = deriveStatus(newAvailable, inventory.lowStockThreshold);
 
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { Inventoryid: inventory.Inventoryid },
-      UpdateExpression: 'SET currentStock = :c, availableStock = :a, #status = :s, lastUpdated = :u',
+      UpdateExpression:'SET currentStock = :c, availableStock = :a, soldProduct = :sold, #status = :s, lastUpdated = :u',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
         ':c': newCurrent,
         ':a': newAvailable,
+        ':sold': newSold,
         ':s': status,
         ':u': new Date().toISOString(),
       },
@@ -537,6 +539,72 @@ const processProductDeletedEvent = async ({ message }) => {
   };
 };
 
+const restoreStock = async (productId, quantity, orderId) => {
+
+  const inventory = await getInventoryByProductId(productId);
+
+  if (!inventory) {
+    const err = new Error("Inventory not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const newCurrent = inventory.currentStock + quantity;
+
+  const newAvailable = newCurrent - inventory.reservedStock;
+
+  const newSold = Math.max(
+    0,
+    (inventory.soldQuantity || 0) - quantity
+  );
+
+  const status = deriveStatus(
+    newAvailable,
+    inventory.lowStockThreshold
+  );
+
+  const { Attributes } = await docClient.send(
+    new UpdateCommand({
+      TableName: TABLE_NAME,
+      Key: {
+        Inventoryid: inventory.Inventoryid,
+      },
+      UpdateExpression: `
+        SET currentStock = :c,
+            availableStock = :a,
+            soldQuantity = :sold,
+            #status = :s,
+            lastUpdated = :u
+      `,
+      ExpressionAttributeNames: {
+        "#status": "status",
+      },
+      ExpressionAttributeValues: {
+        ":c": newCurrent,
+        ":a": newAvailable,
+        ":sold": newSold,
+        ":s": status,
+        ":u": new Date().toISOString(),
+      },
+      ReturnValues: "ALL_NEW",
+    })
+  );
+
+  await recordMovement(
+    productId,
+    "IN",
+    quantity,
+    "ORDER_CANCELLED",
+    orderId
+  );
+
+  console.log(
+    `[Inventory] Stock Restored | Product=${productId} Current=${newCurrent} Available=${newAvailable} Sold=${newSold}`
+  );
+
+  return Attributes;
+};
+
 module.exports = {
   createInventory,
   getAllInventory,
@@ -552,5 +620,6 @@ module.exports = {
   deleteInventory,
   processPaymentEvent,
   processProductCreatedEvent,
-  processProductDeletedEvent
+  processProductDeletedEvent,
+  restoreStock
 };

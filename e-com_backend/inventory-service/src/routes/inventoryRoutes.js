@@ -76,9 +76,8 @@ router.delete(
 
 // Stock Management
 router.post(
-  '/increase',
-  authMiddleware,
-  authorize('Admin'),
+  "/increase",
+  serviceAuthMiddleware,
   stockAdjustRules,
   ctrl.increaseStock
 );
@@ -89,6 +88,12 @@ router.post(
   authorize('Admin'),
   stockAdjustRules,
   ctrl.decreaseStock
+);
+
+router.post(
+  "/restore",
+  serviceAuthMiddleware,
+  ctrl.restoreStock
 );
 
 // =======================================================
