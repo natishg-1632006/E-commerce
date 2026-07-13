@@ -4,7 +4,7 @@ const { docClient, ORDERS_TABLE } = require('../utils/fileHandler');
 const { getCartByUserId, getProductById, clearCart } = require('../utils/cartApi');
 const { checkStock, reserveStock, releaseStock, restoreStock } = require('../utils/inventoryApi');
 const { getProfile, updateProfile } = require('../utils/userApi');
-const { publishOrderCreated, publishOrderConfirmed, publishOrderCancelled } = require("../utils/orderEventPublisher");
+const { publishOrderCreated, publishOrderConfirmed, publishOrderCancelled, publishOrderStatusChanged } = require("../utils/orderEventPublisher");
 
 const {
   ORDER_STATUS,
@@ -405,6 +405,77 @@ const updateOrderStatus = async (orderid, orderStatus) => {
   );
 
   console.log(`[Order] Status updated | orderId: ${orderid} | from: ${existing.orderStatus} | to: ${orderStatus} | timestamp: ${Attributes.updatedAt}`);
+ 
+  try {
+
+    switch (orderStatus) {
+
+      case ORDER_STATUS.PROCESSING:
+
+        await publishOrderStatusChanged(
+          Attributes,
+          "ORDER_PROCESSING"
+        );
+
+        break;
+
+      case ORDER_STATUS.PACKED:
+
+        await publishOrderStatusChanged(
+          Attributes,
+          "ORDER_PACKED"
+        );
+
+        break;
+
+      case ORDER_STATUS.SHIPPED:
+
+        await publishOrderStatusChanged(
+          Attributes,
+          "ORDER_SHIPPED"
+        );
+
+        break;
+
+      case ORDER_STATUS.OUT_FOR_DELIVERY:
+
+        await publishOrderStatusChanged(
+          Attributes,
+          "ORDER_OUT_FOR_DELIVERY"
+        );
+
+         break;
+
+      case ORDER_STATUS.DELIVERED:
+
+        await publishOrderStatusChanged(
+          Attributes,
+          "ORDER_DELIVERED"
+        );
+
+        break;
+
+      case ORDER_STATUS.COMPLETED:
+
+        await publishOrderStatusChanged(
+          Attributes,
+          "ORDER_COMPLETED"
+        );
+
+        break;
+
+      default:
+        break;
+    }
+
+  } catch (err) {
+
+    console.error(
+      `[Order] Failed to publish ${orderStatus}`,
+      err
+    );
+
+  }
   return Attributes;
 };
 
@@ -464,7 +535,7 @@ const cancelOrder = async (orderid) => {
       UpdateExpression: 'SET orderStatus = :status, paymentStatus = :payment, updatedAt = :at',
       ExpressionAttributeValues: {
         ':status': ORDER_STATUS.CANCELLED,
-        ':payment': PAYMENT_STATUS.FAILED,
+        ':payment': PAYMENT_STATUS.REFUNDED,
         ':at': now,
       },
       ReturnValues: 'ALL_NEW',

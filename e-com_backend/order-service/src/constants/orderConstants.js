@@ -41,12 +41,13 @@ const ORDER_STATUS = {
  * REFUNDED  Payment was reversed after a successful charge.
  */
 const PAYMENT_STATUS = {
-  PENDING:  'PENDING',
-  PAID:     'PAID',
-  FAILED:   'FAILED',
-  REFUNDED: 'REFUNDED',
-};
+  PENDING: "PENDING",
+  PAID: "PAID",
+  FAILED: "FAILED",
 
+  REFUND_PENDING: "REFUND_PENDING",
+  REFUNDED: "REFUNDED",
+};
 /**
  * Statuses from which an order can be cancelled by the customer or admin.
  * Orders that are already shipped or beyond cannot be cancelled.

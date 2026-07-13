@@ -10,7 +10,8 @@ const publishOrderCreated = async (order) => {
     eventType: "ORDER_CREATED",
     eventId: uuidv4(),
     timestamp: new Date().toISOString(),
-
+    email: order.email,
+    customerName: order.shippingAddress?.fullName,
     orderId: order.orderid,
     userId: order.userId,
     items: order.items,
@@ -40,7 +41,8 @@ const publishOrderConfirmed = async (order) => {
     eventType: "ORDER_CONFIRMED",
     eventId: uuidv4(),
     timestamp: new Date().toISOString(),
-
+    email: order.email,
+    customerName: order.shippingAddress?.fullName,
     orderId: order.orderid,
     userId: order.userId,
     items: order.items,
@@ -73,8 +75,12 @@ const publishOrderCancelled = async (order, reason = "USER_CANCELLED") => {
     orderId: order.orderid,
     userId: order.userId,
 
+    email: order.email,
+    customerName: order.shippingAddress?.fullName,
+
     totalAmount: order.totalAmount,
     items: order.items,
+
     paymentStatus: order.paymentStatus,
     orderStatus: order.orderStatus,
 
@@ -94,8 +100,52 @@ const publishOrderCancelled = async (order, reason = "USER_CANCELLED") => {
   );
 };
 
+const publishOrderStatusChanged = async (order, eventType) => {
+
+  console.log("========== ORDER EVENT ==========");
+  console.log("Topic:", process.env.ORDER_EVENTS_TOPIC_ARN);
+  console.log("Event:", eventType);
+  console.log("OrderId:", order.orderid);
+  console.log("Email:", order.email);
+  console.log(JSON.stringify(order, null, 2));
+
+  const message = {
+    eventType,
+    eventId: uuidv4(),
+    timestamp: new Date().toISOString(),
+
+    orderId: order.orderid,
+    userId: order.userId,
+
+    email: order.email,
+
+    customerName: order.shippingAddress?.fullName,
+
+    paymentStatus: order.paymentStatus,
+    orderStatus: order.orderStatus,
+
+    totalAmount: order.totalAmount,
+
+    items: order.items,
+  };
+
+  console.log("Publishing Message:");
+  console.log(JSON.stringify(message, null, 2));
+
+  await sns.send(
+    new PublishCommand({
+      TopicArn: process.env.ORDER_EVENTS_TOPIC_ARN,
+      Subject: eventType,
+      Message: JSON.stringify(message),
+    })
+  );
+
+  console.log(`[SNS] ${eventType} published for ${order.orderid}`);
+};
+
 module.exports = {
   publishOrderCreated,
   publishOrderConfirmed,
   publishOrderCancelled,
+  publishOrderStatusChanged
 };

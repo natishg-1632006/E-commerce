@@ -22,14 +22,42 @@ exports.handler = async (event) => {
             console.log(JSON.stringify(message, null, 2));
             const eventType = message.eventType;
 
-            if (eventType !== 'PAYMENT_SUCCESS') {
-                console.log(`[Notification] Ignoring event type: ${eventType}`);
-                continue;
-            }
+            switch (eventType) {
 
-            console.log(`[Notification] Received ${eventType}`);
-            await sendNotification(message);
-            console.log('[Notification] Completed');
+                case "PAYMENT_SUCCESS":
+
+                case "ORDER_CREATED":
+
+                case "ORDER_CONFIRMED":
+
+                case "ORDER_PROCESSING":
+
+                case "ORDER_PACKED":
+
+                case "ORDER_SHIPPED":
+
+                case "ORDER_OUT_FOR_DELIVERY":
+
+                case "ORDER_DELIVERED":
+
+                case "ORDER_COMPLETED":
+
+                case "ORDER_CANCELLED":
+
+                    console.log(`[Notification] Received ${eventType}`);
+
+                    await sendNotification(message);
+
+                    break;
+
+                default:
+
+                    console.log(
+                        `[Notification] Ignoring event type: ${eventType}`
+                    );
+
+                    break;
+            }
         } catch (err) {
             console.error('[Notification] Failed to process payment event', err);
             batchItemFailures.push({ itemIdentifier: messageId });

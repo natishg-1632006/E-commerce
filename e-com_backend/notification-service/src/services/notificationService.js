@@ -1,5 +1,27 @@
 const { sendEmail } = require('./emailService');
 
+const SUBJECTS = {
+  PAYMENT_SUCCESS: "Payment Successful - New Order Received",
+
+  ORDER_CREATED: "Your Order has been Placed",
+
+  ORDER_CONFIRMED: "Your Payment was Successful",
+
+  ORDER_PROCESSING: "Your Order is Being Processed",
+
+  ORDER_PACKED: "Your Order has been Packed",
+
+  ORDER_SHIPPED: "Your Order has been Shipped",
+
+  ORDER_OUT_FOR_DELIVERY: "Your Order is Out for Delivery",
+
+  ORDER_DELIVERED: "Your Order has been Delivered",
+
+  ORDER_COMPLETED: "Thank You for Shopping With Us",
+
+  ORDER_CANCELLED: "Your Order has been Cancelled",
+};
+
 const buildEmailPayload = (message) => {
   const items = Array.isArray(message.items) ? message.items : [];
   const totalProducts = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
@@ -41,19 +63,127 @@ const buildEmailPayload = (message) => {
   return { subject, html, text };
 };
 
-const sendNotification = async (message) => {
-  if (!message || typeof message !== 'object') {
-    throw Object.assign(new Error('Notification payload is required'), { statusCode: 400 });
+const buildOrderStatusEmail = (message) => {
+
+  const subject = SUBJECTS[message.eventType];
+
+  // Special email for cancelled orders
+  if (message.eventType === "ORDER_CANCELLED") {
+
+    return {
+      subject,
+
+      html: `
+                <h2>${subject}</h2>
+
+                <p>Hello ${message.customerName},</p>
+
+                <p>Your order has been cancelled successfully.</p>
+
+                <p><strong>Order ID:</strong> ${message.orderId}</p>
+
+                <p><strong>Status:</strong> ${message.orderStatus}</p>
+
+                <p><strong>Payment Status:</strong> ${message.paymentStatus}</p>
+
+                <p><strong>Total Amount:</strong> ₹${message.totalAmount}</p>
+
+                <p><strong>Reason:</strong> ${message.reason || "Cancelled by customer"}</p>
+
+                <br>
+
+                <p>${message.paymentStatus === "REFUNDED"
+          ? "Your refund has been processed successfully."
+          : "If your payment was successful, your refund will be processed shortly."
+        }</p>
+
+                <br>
+
+                <p>Thank you.</p>
+            `,
+
+      text: `
+${subject}
+
+Hello ${message.customerName},
+
+Your order has been cancelled.
+
+Order ID: ${message.orderId}
+Status: ${message.orderStatus}
+Payment Status: ${message.paymentStatus}
+Total: ₹${message.totalAmount}
+Reason: ${message.reason || "Cancelled by customer"}
+
+${message.paymentStatus === "REFUNDED"
+  ? "Your refund has been processed successfully."
+  : message.paymentStatus === "REFUND_PENDING"
+  ? "Your refund request has been received and will be processed shortly."
+  : "No refund is applicable for this order."
+}
+`
+    };
   }
 
-  console.log('[Notification] Received PAYMENT_SUCCESS');
-  console.log('[Notification] Preparing Email');
+  // Default email for all other order events
+  return {
+    subject,
 
-  const emailPayload = buildEmailPayload(message);
-  const recipient = process.env.NOTIFICATION_OWNER_EMAIL;
+    html: `
+            <h2>${subject}</h2>
 
-  if (!recipient) {
-    throw Object.assign(new Error('NOTIFICATION_OWNER_EMAIL is not configured'), { statusCode: 500 });
+            <p>Hello ${message.customerName},</p>
+
+            <p>Your order status has changed.</p>
+
+            <p><strong>Order ID:</strong> ${message.orderId}</p>
+
+            <p><strong>Status:</strong> ${message.orderStatus}</p>
+
+            <p><strong>Total:</strong> ₹${message.totalAmount}</p>
+
+            <br>
+
+            <p>Thank you for shopping with us.</p>
+        `,
+
+    text: `
+${subject}
+
+Hello ${message.customerName},
+
+Your order status has changed.
+
+Order ID: ${message.orderId}
+Status: ${message.orderStatus}
+Total: ₹${message.totalAmount}
+
+Thank you for shopping with us.
+`
+  };
+};
+
+const sendNotification = async (message) => {
+
+  if (!message || typeof message !== "object") {
+    throw new Error("Notification payload is required");
+  }
+
+  let recipient;
+  let emailPayload;
+
+  if (message.eventType === "PAYMENT_SUCCESS") {
+
+    recipient = process.env.NOTIFICATION_OWNER_EMAIL;
+
+    emailPayload = buildEmailPayload(message);
+
+  } else {
+
+    recipient = message.email;
+
+    emailPayload = buildOrderStatusEmail(message);
+
   }
 
   await sendEmail({
@@ -63,7 +193,14 @@ const sendNotification = async (message) => {
     text: emailPayload.text,
   });
 
-  return { success: true, message: 'Notification sent successfully' };
+  console.log(
+    `[Notification] Email sent to ${recipient}`
+  );
+
+  return {
+    success: true,
+  };
 };
+
 
 module.exports = { sendNotification };
