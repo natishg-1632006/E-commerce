@@ -11,6 +11,7 @@ const {
   PAYMENT_STATUS,
   CANCELLABLE_STATUSES,
   TERMINAL_STATUSES,
+  STATUS_TRANSITIONS,
 } = require('../constants/orderConstants');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -153,6 +154,12 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
     totalAmount,
     createdAt: now,
     expiresAt: getExpiresAt(),
+    statusHistory: [
+      {
+        status: ORDER_STATUS.PENDING_PAYMENT,
+        timestamp: now,
+      },
+    ],
     ...(priceChanges.length > 0 && { priceUpdated: true, priceChanges }),
   };
   console.log("===== ORDER =====");
@@ -288,13 +295,35 @@ const processPaymentEvent = async ({ eventType, eventId, message }) => {
     new UpdateCommand({
       TableName: ORDERS_TABLE,
       Key: { orderid: message.orderId },
-      UpdateExpression: 'SET paymentStatus = :payment, orderStatus = :order, updatedAt = :at, processedEventIds = list_append(if_not_exists(processedEventIds, :emptyList), :eventIdList)',
+      UpdateExpression:
+        `
+        SET
+        paymentStatus = :payment,
+        orderStatus = :order,
+        updatedAt = :at,
+        statusHistory =
+        list_append(
+        if_not_exists(statusHistory,:emptyHistory),
+        :history
+        ),
+        processedEventIds =
+        list_append(
+        if_not_exists(processedEventIds,:emptyList),
+        :eventIdList
+        )`,
       ExpressionAttributeValues: {
         ':payment': paymentStatus,
         ':order': orderStatus,
         ':at': now,
         ':emptyList': [],
         ':eventIdList': [idempotencyKey],
+        ":emptyHistory": [],
+        ":history": [
+          {
+            status: orderStatus,
+            timestamp: now,
+          },
+        ],
       },
       ReturnValues: 'ALL_NEW',
     })
@@ -325,20 +354,51 @@ const updateOrderStatus = async (orderid, orderStatus) => {
   const existing = await getOrderById(orderid);
   if (!existing) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
 
-  if (TERMINAL_STATUSES.includes(existing.orderStatus))
+  if (TERMINAL_STATUSES.includes(existing.orderStatus)) {
     throw Object.assign(
-      new Error(`Cannot update order with terminal status: ${existing.orderStatus}`),
+      new Error(`Cannot update terminal order: ${existing.orderStatus}`),
       { statusCode: 400 }
     );
+  }
+
+  const allowed =
+    STATUS_TRANSITIONS[existing.orderStatus] || [];
+
+  if (!allowed.includes(orderStatus)) {
+    throw Object.assign(
+      new Error(
+        `Invalid transition from ${existing.orderStatus} to ${orderStatus}`
+      ),
+      { statusCode: 400 }
+    );
+  }
 
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: ORDERS_TABLE,
       Key: { orderid },
-      UpdateExpression: 'SET orderStatus = :status, updatedAt = :at',
+      UpdateExpression:
+        `
+        SET
+        orderStatus = :status,
+        updatedAt = :at,
+        statusHistory =
+        list_append(
+        if_not_exists(statusHistory, :empty),
+        :newHistory
+        )`,
       ExpressionAttributeValues: {
-        ':status': orderStatus,
-        ':at': new Date().toISOString(),
+        ":status": orderStatus,
+        ":at": new Date().toISOString(),
+
+        ":empty": [],
+
+        ":newHistory": [
+          {
+            status: orderStatus,
+            timestamp: new Date().toISOString(),
+          },
+        ],
       },
       ReturnValues: 'ALL_NEW',
     })
