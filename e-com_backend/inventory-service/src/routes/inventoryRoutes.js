@@ -24,6 +24,12 @@ router.get(
   ctrl.checkStockAvailability
 );
 
+router.post(
+  "/batch-check",
+  serviceAuthMiddleware,
+  ctrl.checkStockAvailabilityBatch
+);
+
 // =======================================================
 // Admin Only
 // =======================================================

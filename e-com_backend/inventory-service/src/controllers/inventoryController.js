@@ -101,6 +101,19 @@ const checkStockAvailability = async (req, res, next) => {
   }
 };
 
+const checkStockAvailabilityBatch = async (req, res, next) => {
+  try {
+
+    const result =
+      await service.checkStockAvailabilityBatch(req.body.items);
+
+    success(res, result);
+
+  } catch (err) {
+    next(err);
+  }
+};
+
 const reduceStock = async (req, res, next) => {
   try {
     const { productId, quantity, referenceId } = req.body;
@@ -154,6 +167,7 @@ module.exports = {
   reserveStock,
   releaseStock,
   checkStockAvailability,
+  checkStockAvailabilityBatch,
   getLowStockProducts,
   reduceStock,
   restoreStock

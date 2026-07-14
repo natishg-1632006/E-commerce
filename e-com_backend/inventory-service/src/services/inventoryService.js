@@ -4,6 +4,7 @@ const {
   DeleteCommand,
   ScanCommand,
   UpdateCommand,
+  QueryCommand
 } = require('@aws-sdk/lib-dynamodb');
 const { docClient, TABLE_NAME, MOVEMENTS_TABLE } = require('../utils/fileHandler');
 const { getProduct } = require('../utils/productApi');
@@ -38,13 +39,22 @@ const recordMovement = async (productId, type, quantity, reason, referenceId = '
 
 // Scan table to find inventory record by productId (not the partition key)
 const getInventoryByProductId = async (productId) => {
+  console.time("Inventory Query");
+
   const { Items = [] } = await docClient.send(
-    new ScanCommand({
+    new QueryCommand({
       TableName: TABLE_NAME,
-      FilterExpression: 'productId = :pid',
-      ExpressionAttributeValues: { ':pid': productId },
+      IndexName: "ProductIdIndex",
+      KeyConditionExpression: "productId = :pid",
+      ExpressionAttributeValues: {
+        ":pid": productId,
+      },
+      Limit: 1,
     })
   );
+
+  console.timeEnd("Inventory Query");
+
   return Items[0] || null;
 };
 
@@ -268,7 +278,7 @@ const increaseStock = async (productId, quantity, reason) => {
     new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { Inventoryid: inventory.Inventoryid },
-      UpdateExpression:'SET currentStock = :c, availableStock = :a, soldProduct = :sold, #status = :s, lastUpdated = :u',
+      UpdateExpression: 'SET currentStock = :c, availableStock = :a, soldProduct = :sold, #status = :s, lastUpdated = :u',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
         ':c': newCurrent,
@@ -417,6 +427,60 @@ const checkStockAvailability = async (productId, quantity = 1) => {
     isAvailable: inventory.availableStock >= qty,
     status: inventory.status,
   };
+};
+
+const checkStockAvailabilityBatch = async (items) => {
+
+  if (!Array.isArray(items) || items.length === 0) {
+    const err = new Error("items array is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const results = await Promise.all(
+
+    items.map(async ({ productId, quantity }) => {
+
+      const inventory =
+        await getInventoryByProductId(productId);
+
+      if (!inventory) {
+
+        return {
+          productId,
+          exists: false,
+          isAvailable: false,
+        };
+
+      }
+
+      const qty = Number(quantity);
+
+      return {
+
+        productId,
+
+        exists: true,
+
+        requestedQuantity: qty,
+
+        availableStock:
+          inventory.availableStock,
+
+        isAvailable:
+          inventory.availableStock >= qty,
+
+        status:
+          inventory.status,
+
+      };
+
+    })
+
+  );
+
+  return results;
+
 };
 
 const getLowStockProducts = async () => {
@@ -616,6 +680,7 @@ module.exports = {
   releaseStock,
   reduceStock,
   checkStockAvailability,
+  checkStockAvailabilityBatch,
   getLowStockProducts,
   deleteInventory,
   processPaymentEvent,
