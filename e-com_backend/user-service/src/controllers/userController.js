@@ -3,7 +3,14 @@ const { success, error } = require('../utils/responseHandler');
 
 const getProfile = async (req, res, next) => {
   try {
-    const profile = await service.getOrCreateProfile(req.user.sub, req.user.email);
+    console.time("Controller");
+
+    console.time("Service");
+    const profile = await service.getProfile(req.user.sub);
+    console.timeEnd("Service");
+
+    console.timeEnd("Controller");
+
     success(res, profile);
   } catch (err) {
     next(err);

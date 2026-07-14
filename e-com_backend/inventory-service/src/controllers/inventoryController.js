@@ -79,6 +79,23 @@ const reserveStock = async (req, res, next) => {
   }
 };
 
+const reserveStockBatch = async (req, res, next) => {
+  try {
+
+    const { orderId, items } = req.body;
+
+    const result = await service.reserveStockBatch(
+      orderId,
+      items
+    );
+
+    success(res, result);
+
+  } catch (err) {
+    next(err);
+  }
+};
+
 const releaseStock = async (req, res, next) => {
   try {
     const { productId, quantity, referenceId } = req.body;
@@ -165,6 +182,7 @@ module.exports = {
   increaseStock,
   decreaseStock,
   reserveStock,
+  reserveStockBatch,
   releaseStock,
   checkStockAvailability,
   checkStockAvailabilityBatch,

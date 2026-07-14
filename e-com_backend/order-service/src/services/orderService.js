@@ -2,7 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require("@aws-sdk/lib-dynamodb");
 const { docClient, ORDERS_TABLE } = require('../utils/fileHandler');
 const { getCartByUserId, getProductById, getProductsByIds, clearCart } = require('../utils/cartApi');
-const { checkStock, reserveStock, releaseStock, restoreStock, checkStockBatch } = require('../utils/inventoryApi');
+const { checkStock, reserveStock, reserveStockBatch, releaseStock, restoreStock, checkStockBatch } = require('../utils/inventoryApi');
 const { getProfile, updateProfile } = require('../utils/userApi');
 const { publishOrderCreated, publishOrderConfirmed, publishOrderCancelled, publishOrderStatusChanged } = require("../utils/orderEventPublisher");
 
@@ -25,10 +25,19 @@ const getExpiresAt = () => {
 
 const createOrder = async (userId, email, shippingAddress, paymentMethod, token) => {
 
-  const [cart, profile] = await Promise.all([
-    getCartByUserId(userId),
-    getProfile(token),
-  ]);
+  console.time("Get Cart");
+
+  const cartPromise = getCartByUserId(userId);
+
+  console.time("Get Profile");
+
+  const profilePromise = getProfile(token);
+
+  const cart = await cartPromise;
+  console.timeEnd("Get Cart");
+
+  const profile = await profilePromise;
+  console.timeEnd("Get Profile");
 
   if (!cart) {
     throw Object.assign(
@@ -54,7 +63,7 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
 
   if (isProfileIncomplete) {
     console.log(`[Order] Updating user profile for ${userId}`);
-
+    console.time("Update Profile");
     await updateProfile(
       {
         fullName: shippingAddress.fullName,
@@ -70,6 +79,7 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
       },
       token
     );
+    console.timeEnd("Update Profile");
 
     console.log(`[Order] User profile updated successfully`);
   }
@@ -82,19 +92,27 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
   console.time("Batch Product + Inventory");
 
   // Fetch products and inventory in parallel
-  const [products, inventoryResults] = await Promise.all([
-    getProductsByIds(
-      cart.items.map(item => item.productId)
-    ),
+  console.time("Batch Products");
 
-    checkStockBatch(
-      cart.items.map(item => ({
-        productId: item.productId,
-        quantity: item.quantity,
-      }))
-    )
-  ]);
+  const productPromise = getProductsByIds(
+    cart.items.map(item => item.productId)
+  );
 
+  console.time("Batch Inventory");
+
+  const inventoryPromise = checkStockBatch(
+    cart.items.map(item => ({
+      productId: item.productId,
+      quantity: item.quantity
+    }))
+  );
+
+  const products = await productPromise;
+  console.timeEnd("Batch Products");
+
+  const inventoryResults = await inventoryPromise;
+  console.timeEnd("Batch Inventory");
+  
   const productMap = new Map(
     products.map(product => [
       product.productId,
@@ -166,28 +184,41 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
   // ── Step 3: Reserve inventory (with full rollback on any failure) ──────────
   // orderId is generated here so it can be used as the reservation referenceId,
   // making every inventory movement traceable back to this specific order.
+  // ── Step 3: Reserve inventory ───────────────────────────────
+
   const orderId = uuidv4();
-  const reserved = [];
 
-  console.log(`[Order] Reserving inventory | orderId: ${orderId} | userId: ${userId} | items: ${enrichedItems.length} | timestamp: ${new Date().toISOString()}`);
+  console.time("Reserve Inventory");
 
-  for (const item of enrichedItems) {
-    try {
-      await reserveStock(item.productId, item.quantity, orderId);
-      reserved.push(item);
-      console.log(`[Order] Reserved | orderId: ${orderId} | productId: ${item.productId} | quantity: ${item.quantity}`);
-    } catch (err) {
-      // Rollback all previously reserved items before aborting
-      console.warn(`[Order] Reservation failed for productId: ${item.productId} | orderId: ${orderId} | error: ${err.message} | rolling back ${reserved.length} item(s)`);
-      await Promise.allSettled(
-        reserved.map((r) => releaseStock(r.productId, r.quantity, orderId))
-      );
-      throw Object.assign(
-        new Error(`Reservation failed for "${item.name}": ${err.message}`),
-        { statusCode: 400 }
-      );
-    }
+  console.log(
+    `[Order] Reserving inventory | orderId: ${orderId} | userId: ${userId} | items: ${enrichedItems.length}`
+  );
+
+  try {
+
+    await reserveStockBatch(
+      orderId,
+      enrichedItems
+    );
+
+    console.log(
+      `[Order] Reserved ${enrichedItems.length} product(s)`
+    );
+
+  } catch (err) {
+
+    throw Object.assign(
+      new Error(
+        `Inventory reservation failed: ${err.message}`
+      ),
+      {
+        statusCode: 400,
+      }
+    );
+
   }
+
+  console.timeEnd("Reserve Inventory");
 
   // ── Step 4: Build and persist the order ───────────────────────────────────
   const totalAmount = parseFloat(enrichedItems.reduce((sum, i) => sum + i.subtotal, 0).toFixed(2));
@@ -226,8 +257,9 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
 
   // Publish event
   try {
+    console.time("Publish SNS");
     await publishOrderCreated(order);
-
+    console.timeEnd("Publish SNS");
     console.log(
       `[Order] ORDER_CREATED published for ${order.orderid}`
     );
@@ -239,9 +271,9 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
 
     // Do not fail order creation if SNS publish fails
   }
-
+  console.time("Clear Cart");
   await clearCart(cart.cartid);
-
+  console.timeEnd("Clear Cart");
   console.log(
     `[Order] Created | orderId: ${orderId} | userId: ${userId}`
   );

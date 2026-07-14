@@ -13,12 +13,16 @@ const buildEmptyProfile = (userId, email) => ({
 });
 
 const getUserById = async (userId) => {
+  console.time("Dynamo");
+
   const { Item } = await docClient.send(
     new GetCommand({
       TableName: TABLE_NAME,
-      Key: { userId },
+      Key: { userId }
     })
   );
+
+  console.timeEnd("Dynamo");
 
   return Item || null;
 };
@@ -32,6 +36,23 @@ const getOrCreateProfile = async (userId, email) => {
 
   const profile = buildEmptyProfile(userId, email);
   await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: profile }));
+  return profile;
+};
+
+const getProfile = async (userId) => {
+  let profile = await getUserById(userId);
+
+  if (!profile) {
+    profile = buildEmptyProfile(userId, null);
+
+    await docClient.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: profile,
+      })
+    );
+  }
+
   return profile;
 };
 
@@ -83,4 +104,5 @@ module.exports = {
   getOrCreateProfile,
   updateProfile,
   getAllUsers,
+  getProfile,
 };

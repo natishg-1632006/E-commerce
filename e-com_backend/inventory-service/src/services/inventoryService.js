@@ -4,7 +4,8 @@ const {
   DeleteCommand,
   ScanCommand,
   UpdateCommand,
-  QueryCommand
+  GetCommand,
+  BatchGetCommand
 } = require('@aws-sdk/lib-dynamodb');
 const { docClient, TABLE_NAME, MOVEMENTS_TABLE } = require('../utils/fileHandler');
 const { getProduct } = require('../utils/productApi');
@@ -37,25 +38,38 @@ const recordMovement = async (productId, type, quantity, reason, referenceId = '
   return movement;
 };
 
-// Scan table to find inventory record by productId (not the partition key)
 const getInventoryByProductId = async (productId) => {
-  console.time("Inventory Query");
 
-  const { Items = [] } = await docClient.send(
-    new QueryCommand({
+  const { Item } = await docClient.send(
+    new GetCommand({
       TableName: TABLE_NAME,
-      IndexName: "ProductIdIndex",
-      KeyConditionExpression: "productId = :pid",
-      ExpressionAttributeValues: {
-        ":pid": productId,
+      Key: {
+        productId,
       },
-      Limit: 1,
     })
   );
 
-  console.timeEnd("Inventory Query");
+  return Item || null;
+};
 
-  return Items[0] || null;
+const getInventoryBatch = async (productIds) => {
+
+  if (!productIds.length) return [];
+
+  const { Responses } = await docClient.send(
+    new BatchGetCommand({
+      RequestItems: {
+        [TABLE_NAME]: {
+          Keys: productIds.map(productId => ({
+            productId
+          }))
+        }
+      }
+    })
+  );
+
+  return Responses?.[TABLE_NAME] || [];
+
 };
 
 const getProductEventKey = (inventory, eventId, productId) => {
@@ -72,7 +86,7 @@ const appendProcessedEvent = async (inventory, eventId, productId) => {
   await docClient.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
-      Key: { Inventoryid: inventory.Inventoryid },
+      Key: { productId: inventory.productId },
       UpdateExpression: 'SET processedEventIds = list_append(if_not_exists(processedEventIds, :emptyList), :eventIdList)',
       ExpressionAttributeValues: {
         ':emptyList': [],
@@ -160,17 +174,23 @@ const createInventory = async (data) => {
   const lowStockThreshold = parseInt(data.lowStockThreshold ?? 10);
 
   const inventory = {
-    Inventoryid: uuidv4(),           // partition key
     productId: data.productId,
     currentStock,
     reservedStock,
     availableStock,
     lowStockThreshold,
+    soldQuantity: 0,
+    processedEventIds: [],
     status: deriveStatus(availableStock, lowStockThreshold),
     lastUpdated: new Date().toISOString(),
   };
 
-  await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: inventory }));
+  await docClient.send(
+    new PutCommand({
+      TableName: TABLE_NAME,
+      Item: inventory,
+    })
+  );
   await recordMovement(data.productId, 'IN', currentStock, 'Initial Stock');
   return inventory;
 };
@@ -200,18 +220,14 @@ const processProductCreatedEvent = async ({ message }) => {
   }
 
   const inventory = {
-    Inventoryid: uuidv4(),
-
     productId: message.productId,
-
     currentStock: 0,
     reservedStock: 0,
     availableStock: 0,
-
+    soldQuantity: 0,
+    processedEventIds: [],
     lowStockThreshold: 10,
-
     status: "Out Of Stock",
-
     lastUpdated: new Date().toISOString(),
   };
 
@@ -247,7 +263,7 @@ const updateInventory = async (productId, data) => {
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
-      Key: { Inventoryid: existing.Inventoryid },
+      Key: { productId },
       UpdateExpression: 'SET lowStockThreshold = :t, #status = :s, lastUpdated = :u',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
@@ -277,7 +293,7 @@ const increaseStock = async (productId, quantity, reason) => {
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
-      Key: { Inventoryid: inventory.Inventoryid },
+      Key: { productId: inventory.productId },
       UpdateExpression: 'SET currentStock = :c, availableStock = :a, #status = :s, lastUpdated = :u',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
@@ -316,7 +332,7 @@ const decreaseStock = async (productId, quantity, reason) => {
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
-      Key: { Inventoryid: inventory.Inventoryid },
+      Key: { productId: inventory.productId },
       UpdateExpression: 'SET currentStock = :c, availableStock = :a, #status = :s, lastUpdated = :u',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
@@ -355,7 +371,7 @@ const reserveStock = async (productId, quantity, referenceId) => {
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
-      Key: { Inventoryid: inventory.Inventoryid },
+      Key: { productId: inventory.productId },
       UpdateExpression: 'SET reservedStock = :r, availableStock = :a, #status = :s, lastUpdated = :u',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
@@ -370,6 +386,106 @@ const reserveStock = async (productId, quantity, referenceId) => {
 
   await recordMovement(productId, 'RESERVE', quantity, 'Stock reserved for order', referenceId);
   return Attributes;
+};
+
+const reserveStockBatch = async (orderId, items) => {
+
+  if (!Array.isArray(items) || items.length === 0) {
+    const err = new Error("Items array is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Fetch all inventory in one request
+  const inventories = await getInventoryBatch(
+    items.map(item => item.productId)
+  );
+
+  const inventoryMap = new Map(
+    inventories.map(inv => [inv.productId, inv])
+  );
+
+  // Validate first
+  for (const item of items) {
+
+    const inventory = inventoryMap.get(item.productId);
+
+    if (!inventory) {
+      const err = new Error(
+        `Inventory not found for ${item.productId}`
+      );
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (inventory.availableStock < item.quantity) {
+      const err = new Error(
+        `Insufficient stock for ${item.productId}`
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  // Reserve all in parallel
+  await Promise.all(
+
+    items.map(async (item) => {
+
+      const inventory = inventoryMap.get(item.productId);
+
+      const newReserved =
+        inventory.reservedStock + item.quantity;
+
+      const newAvailable =
+        inventory.currentStock - newReserved;
+
+      const status = deriveStatus(
+        newAvailable,
+        inventory.lowStockThreshold
+      );
+
+      await docClient.send(
+        new UpdateCommand({
+          TableName: TABLE_NAME,
+          Key: {
+            productId: inventory.productId,
+          },
+          UpdateExpression: `
+                        SET reservedStock = :r,
+                            availableStock = :a,
+                            #status = :s,
+                            lastUpdated = :u
+                    `,
+          ExpressionAttributeNames: {
+            "#status": "status",
+          },
+          ExpressionAttributeValues: {
+            ":r": newReserved,
+            ":a": newAvailable,
+            ":s": status,
+            ":u": new Date().toISOString(),
+          },
+        })
+      );
+
+      await recordMovement(
+        item.productId,
+        "RESERVE",
+        item.quantity,
+        "Stock reserved for order",
+        orderId
+      );
+
+    })
+
+  );
+
+  return {
+    success: true,
+    reservedCount: items.length,
+  };
+
 };
 
 const releaseStock = async (productId, quantity, referenceId) => {
@@ -394,7 +510,7 @@ const releaseStock = async (productId, quantity, referenceId) => {
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
-      Key: { Inventoryid: inventory.Inventoryid },
+      Key: { productId: inventory.productId },
       UpdateExpression: 'SET reservedStock = :r, availableStock = :a, #status = :s, lastUpdated = :u',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
@@ -430,56 +546,50 @@ const checkStockAvailability = async (productId, quantity = 1) => {
 
 const checkStockAvailabilityBatch = async (items) => {
 
-  if (!Array.isArray(items) || items.length === 0) {
-    const err = new Error("items array is required");
-    err.statusCode = 400;
-    throw err;
-  }
+    console.time("BatchGet Inventory");
 
-  const results = await Promise.all(
+    const inventories = await getInventoryBatch(
+        items.map(i => i.productId)
+    );
 
-    items.map(async ({ productId, quantity }) => {
+    console.timeEnd("BatchGet Inventory");
 
-      const inventory =
-        await getInventoryByProductId(productId);
+    console.time("Build Map");
 
-      if (!inventory) {
+    const inventoryMap = new Map(
+        inventories.map(inv => [inv.productId, inv])
+    );
+
+    console.timeEnd("Build Map");
+
+    console.time("Build Response");
+
+    const results = items.map(item => {
+
+        const inventory = inventoryMap.get(item.productId);
+
+        if (!inventory) {
+            return {
+                productId: item.productId,
+                exists: false,
+                isAvailable: false,
+            };
+        }
 
         return {
-          productId,
-          exists: false,
-          isAvailable: false,
+            productId: item.productId,
+            exists: true,
+            requestedQuantity: item.quantity,
+            availableStock: inventory.availableStock,
+            isAvailable: inventory.availableStock >= item.quantity,
+            status: inventory.status,
         };
 
-      }
+    });
 
-      const qty = Number(quantity);
+    console.timeEnd("Build Response");
 
-      return {
-
-        productId,
-
-        exists: true,
-
-        requestedQuantity: qty,
-
-        availableStock:
-          inventory.availableStock,
-
-        isAvailable:
-          inventory.availableStock >= qty,
-
-        status:
-          inventory.status,
-
-      };
-
-    })
-
-  );
-
-  return results;
-
+    return results;
 };
 
 const getLowStockProducts = async () => {
@@ -528,7 +638,7 @@ const reduceStock = async (productId, quantity, referenceId = '') => {
   const { Attributes } = await docClient.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
-      Key: { Inventoryid: inventory.Inventoryid },
+      Key: { productId: inventory.productId },
       UpdateExpression:
         'SET currentStock = :c, reservedStock = :r, availableStock = :a, #status = :s, lastUpdated = :u, soldQuantity = if_not_exists(soldQuantity, :zero) + :qty',
       ExpressionAttributeNames: { '#status': 'status' },
@@ -558,7 +668,7 @@ const deleteInventory = async (productId) => {
   const existing = await getInventoryByProductId(productId);
   if (!existing) return null;
   await docClient.send(
-    new DeleteCommand({ TableName: TABLE_NAME, Key: { Inventoryid: existing.Inventoryid } })
+    new DeleteCommand({ TableName: TABLE_NAME, Key: { productId } })
   );
   return existing;
 };
@@ -588,7 +698,7 @@ const processProductDeletedEvent = async ({ message }) => {
     new DeleteCommand({
       TableName: TABLE_NAME,
       Key: {
-        Inventoryid: inventory.Inventoryid,
+        productId: message.productId,
       },
     })
   );
@@ -630,7 +740,7 @@ const restoreStock = async (productId, quantity, orderId) => {
     new UpdateCommand({
       TableName: TABLE_NAME,
       Key: {
-        Inventoryid: inventory.Inventoryid,
+        productId: inventory.productId,
       },
       UpdateExpression: `
         SET currentStock = :c,
@@ -676,6 +786,7 @@ module.exports = {
   increaseStock,
   decreaseStock,
   reserveStock,
+  reserveStockBatch,
   releaseStock,
   reduceStock,
   checkStockAvailability,

@@ -82,6 +82,24 @@ const reserveStock = async (productId, quantity, referenceId) => {
   return data?.data || null;
 };
 
+const reserveStockBatch = async (orderId, items) => {
+
+  const { data } = await axios.post(
+    `${INVENTORY_URL}/api/v1/inventory/reserve-batch`,
+    {
+      orderId,
+      items,
+    },
+    {
+      headers: {
+        "x-service-key": process.env.INTERNAL_SERVICE_KEY,
+      },
+    }
+  );
+
+  return data.data;
+};
+
 /**
  * Release Stock
  * Internal API
@@ -155,6 +173,7 @@ module.exports = {
   checkStock,
   checkStockBatch,
   reserveStock,
+  reserveStockBatch,
   releaseStock,
   increaseStock,
   restoreStock

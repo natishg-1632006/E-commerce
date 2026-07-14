@@ -117,6 +117,12 @@ router.post(
 );
 
 router.post(
+  "/reserve-batch",
+  serviceAuthMiddleware,
+  ctrl.reserveStockBatch
+);
+
+router.post(
   '/release',
   serviceAuthMiddleware,
   reserveRules,

@@ -11,7 +11,7 @@ const authMiddleware = async (req, res, next) => {
         message: 'Authorization header is missing',
       });
     }
-
+    console.time("JWT Verify");
     const token = extractTokenFromHeader(authHeader);
 
     if (!token) {
@@ -23,7 +23,7 @@ const authMiddleware = async (req, res, next) => {
 
     const cognitoConfig = getCognitoConfig();
     const decodedPayload = await verifyAccessToken(token, cognitoConfig);
-
+     console.timeEnd("JWT Verify");
     req.user = decodedPayload;
     next();
   } catch (error) {
