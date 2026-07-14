@@ -31,6 +31,34 @@ const checkStock = async (productId, quantity, token) => {
   }
 };
 
+const checkStockBatch = async (items) => {
+  try {
+
+    const { data } = await axios.post(
+      `${INVENTORY_URL}/api/v1/inventory/batch-check`,
+      {
+        items,
+      },
+      {
+        headers: {
+          "x-service-key": process.env.INTERNAL_SERVICE_KEY,
+        },
+      }
+    );
+
+    return data.data || [];
+
+  } catch (err) {
+
+    throw new Error(
+      `Inventory Batch API Error: ${
+        err.response?.data?.message || err.message
+      }`
+    );
+
+  }
+};
+
 /**
  * Reserve Stock
  * Internal API
@@ -125,6 +153,7 @@ const restoreStock = async (productId, quantity, orderId) => {
 
 module.exports = {
   checkStock,
+  checkStockBatch,
   reserveStock,
   releaseStock,
   increaseStock,

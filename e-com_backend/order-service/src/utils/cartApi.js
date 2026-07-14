@@ -1,4 +1,4 @@
-const { GetCommand, ScanCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { GetCommand, BatchGetCommand, ScanCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient, CART_TABLE, PRODUCTS_TABLE } = require('./fileHandler');
 
 const getCartByUserId = async (userId) => {
@@ -20,10 +20,27 @@ const getProductById = async (productId) => {
   return Item || null;
 };
 
+const getProductsByIds = async (productIds) => {
+
+  const { Responses } = await docClient.send(
+    new BatchGetCommand({
+      RequestItems: {
+        [PRODUCTS_TABLE]: {
+          Keys: productIds.map((productId) => ({
+            productId,
+          })),
+        },
+      },
+    })
+  );
+
+  return Responses?.[PRODUCTS_TABLE] || [];
+};
+
 const clearCart = async (cartid) => {
   await docClient.send(
     new DeleteCommand({ TableName: CART_TABLE, Key: { cartid } })
   );
 };
 
-module.exports = { getCartByUserId, getProductById, clearCart };
+module.exports = { getCartByUserId, getProductById, getProductsByIds, clearCart };

@@ -278,12 +278,11 @@ const increaseStock = async (productId, quantity, reason) => {
     new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { Inventoryid: inventory.Inventoryid },
-      UpdateExpression: 'SET currentStock = :c, availableStock = :a, soldProduct = :sold, #status = :s, lastUpdated = :u',
+      UpdateExpression: 'SET currentStock = :c, availableStock = :a, #status = :s, lastUpdated = :u',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
         ':c': newCurrent,
         ':a': newAvailable,
-        ':sold': newSold,
         ':s': status,
         ':u': new Date().toISOString(),
       },

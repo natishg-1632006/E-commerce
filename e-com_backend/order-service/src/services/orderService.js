@@ -1,8 +1,8 @@
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, ScanCommand, UpdateCommand,  QueryCommand } = require("@aws-sdk/lib-dynamodb");
+const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require("@aws-sdk/lib-dynamodb");
 const { docClient, ORDERS_TABLE } = require('../utils/fileHandler');
-const { getCartByUserId, getProductById, clearCart } = require('../utils/cartApi');
-const { checkStock, reserveStock, releaseStock, restoreStock } = require('../utils/inventoryApi');
+const { getCartByUserId, getProductById, getProductsByIds, clearCart } = require('../utils/cartApi');
+const { checkStock, reserveStock, releaseStock, restoreStock, checkStockBatch } = require('../utils/inventoryApi');
 const { getProfile, updateProfile } = require('../utils/userApi');
 const { publishOrderCreated, publishOrderConfirmed, publishOrderCancelled, publishOrderStatusChanged } = require("../utils/orderEventPublisher");
 
@@ -78,20 +78,58 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
   const stockErrors = [];
   const priceChanges = [];
 
+  // Fetch inventory for all products in ONE API call
+  console.time("Batch Product + Inventory");
+
+  // Fetch products and inventory in parallel
+  const [products, inventoryResults] = await Promise.all([
+    getProductsByIds(
+      cart.items.map(item => item.productId)
+    ),
+
+    checkStockBatch(
+      cart.items.map(item => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      }))
+    )
+  ]);
+
+  const productMap = new Map(
+    products.map(product => [
+      product.productId,
+      product
+    ])
+  );
+
+  const inventoryMap = new Map(
+    inventoryResults.map(item => [
+      item.productId,
+      item
+    ])
+  );
+
+  console.timeEnd("Batch Product + Inventory");
+
   const enrichedItems = await Promise.all(
     cart.items.map(async (item) => {
-      const product = await getProductById(item.productId);
+
+      // Only Product Service is called individually
+      const product = productMap.get(item.productId);
+
+      // Inventory comes from the batch response
+      const stockInfo = inventoryMap.get(item.productId);
 
       if (!product) {
         stockErrors.push(`"${item.name}" is no longer available`);
         return null;
       }
 
-      const stockInfo = await checkStock(item.productId, item.quantity, token);
-      if (!stockInfo) {
+      if (!stockInfo || !stockInfo.exists) {
         stockErrors.push(`No inventory record found for "${product.name}"`);
         return null;
       }
+
       if (!stockInfo.isAvailable) {
         stockErrors.push(
           `"${product.name}" has only ${stockInfo.availableStock} unit(s) left but ${item.quantity} requested`
@@ -100,7 +138,11 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
       }
 
       if (product.price !== item.price) {
-        priceChanges.push({ name: product.name, oldPrice: item.price, newPrice: product.price });
+        priceChanges.push({
+          name: product.name,
+          oldPrice: item.price,
+          newPrice: product.price,
+        });
       }
 
       return {
