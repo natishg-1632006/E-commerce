@@ -14,6 +14,8 @@ router.get(
   controller.getProducts
 );
 
+router.post("/batch", controller.getProductsByIds);
+
 router.get(
   '/:id',
   authMiddleware,

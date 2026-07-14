@@ -11,6 +11,7 @@ const {
   DeleteCommand,
   ScanCommand,
   UpdateCommand,
+  BatchGetCommand
 } = require('@aws-sdk/lib-dynamodb');
 const { docClient, TABLE_NAME } = require('../utils/fileHandler');
 
@@ -172,6 +173,29 @@ const createProduct = async (data) => {
 
   return product;
 };
+
+  const getProductsByIds = async (productIds) => {
+
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      const err = new Error("productIds array is required");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const { Responses } = await docClient.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [TABLE_NAME]: {
+            Keys: productIds.map((id) => ({
+              productId: id,
+            })),
+          },
+        },
+      })
+    );
+
+    return Responses?.[TABLE_NAME] || [];
+  };
 
 const updateProduct = async (id, data) => {
   const existing = await getProductById(id);
@@ -404,4 +428,4 @@ const processCategoryEvent = async (message) => {
   }
 };
 
-module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, getFeaturedProducts, generateUploadUrl, generateUploadUrls, processCategoryEvent };
+module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, getFeaturedProducts, generateUploadUrl, generateUploadUrls, processCategoryEvent, getProductsByIds };

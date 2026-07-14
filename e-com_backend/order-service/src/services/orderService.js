@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, ScanCommand, UpdateCommand,  QueryCommand } = require("@aws-sdk/lib-dynamodb");
 const { docClient, ORDERS_TABLE } = require('../utils/fileHandler');
 const { getCartByUserId, getProductById, clearCart } = require('../utils/cartApi');
 const { checkStock, reserveStock, releaseStock, restoreStock } = require('../utils/inventoryApi');
@@ -24,15 +24,25 @@ const getExpiresAt = () => {
 // ─── Create Order ─────────────────────────────────────────────────────────────
 
 const createOrder = async (userId, email, shippingAddress, paymentMethod, token) => {
-  // ── Step 1: Fetch and validate cart ────────────────────────────────────────
-  const cart = await getCartByUserId(userId);
-  if (!cart) throw Object.assign(new Error('Cart not found for this user'), { statusCode: 404 });
-  if (!cart.items || cart.items.length === 0)
-    throw Object.assign(new Error('Cart is empty'), { statusCode: 400 });
 
-  // ── Step 2: Sync user profile (only if profile is incomplete) ───────────────
+  const [cart, profile] = await Promise.all([
+    getCartByUserId(userId),
+    getProfile(token),
+  ]);
 
-  const profile = await getProfile(token);
+  if (!cart) {
+    throw Object.assign(
+      new Error("Cart not found for this user"),
+      { statusCode: 404 }
+    );
+  }
+
+  if (!cart.items || cart.items.length === 0) {
+    throw Object.assign(
+      new Error("Cart is empty"),
+      { statusCode: 400 }
+    );
+  }
 
   const isProfileIncomplete =
     !profile.fullName ||
@@ -211,11 +221,13 @@ const getOrderById = async (orderid) => {
 
 const getOrdersByUser = async (userId) => {
   const { Items = [] } = await docClient.send(
-    new ScanCommand({
+    new QueryCommand({
       TableName: ORDERS_TABLE,
-      FilterExpression: '#userId = :userId',
-      ExpressionAttributeNames: { '#userId': 'userId' },
-      ExpressionAttributeValues: { ':userId': userId },
+      IndexName: "userId-index",
+      KeyConditionExpression: "userId = :userId",
+      ExpressionAttributeValues: {
+        ":userId": userId,
+      },
     })
   );
   return Items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -405,7 +417,7 @@ const updateOrderStatus = async (orderid, orderStatus) => {
   );
 
   console.log(`[Order] Status updated | orderId: ${orderid} | from: ${existing.orderStatus} | to: ${orderStatus} | timestamp: ${Attributes.updatedAt}`);
- 
+
   try {
 
     switch (orderStatus) {
@@ -444,7 +456,7 @@ const updateOrderStatus = async (orderid, orderStatus) => {
           "ORDER_OUT_FOR_DELIVERY"
         );
 
-         break;
+        break;
 
       case ORDER_STATUS.DELIVERED:
 

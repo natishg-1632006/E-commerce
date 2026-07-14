@@ -30,6 +30,25 @@ const getProduct = async (req, res, next) => {
   }
 };
 
+const getProductsByIds = async (req, res, next) => {
+    try {
+
+        const { productIds } = req.body;
+
+        const products =
+            await service.getProductsByIds(productIds);
+
+        return res.status(200).json({
+            success: true,
+            count: products.length,
+            data: products,
+        });
+
+    } catch (err) {
+        next(err);
+    }
+};
+
 const createProduct = async (req, res, next) => {
   try {
     const product = await service.createProduct(req.body);
@@ -86,4 +105,4 @@ const generateUploadUrls = async (req, res, next) => {
   }
 };
 
-module.exports = { getProducts, getFeaturedProducts, getProduct, createProduct, updateProduct, deleteProduct,   generateUploadUrl, generateUploadUrls};
+module.exports = { getProducts, getFeaturedProducts, getProduct, getProductsByIds, createProduct, updateProduct, deleteProduct,   generateUploadUrl, generateUploadUrls};
