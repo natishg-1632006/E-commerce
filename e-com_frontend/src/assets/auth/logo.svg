@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#38BDF8" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <!-- Cart Path -->
+  <path d="M15 20h12l10 38h43l8-28H33" fill="none" stroke="url(#logo-grad)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- Wheels -->
+  <circle cx="40" cy="72" r="7" fill="url(#logo-grad)" />
+  <circle cx="75" cy="72" r="7" fill="url(#logo-grad)" />
+  <!-- AI / Tech Lightning Icon -->
+  <polygon points="55,12 67,30 57,30 63,48 47,26 57,26" fill="url(#logo-grad)" filter="url(#glow)" />
+</svg>
