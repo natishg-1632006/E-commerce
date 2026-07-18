@@ -38,6 +38,7 @@ import {
   DollarSign,
   Ban,
   Loader2,
+  Eye,
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +104,15 @@ const formatDatetime = (iso: string | undefined) => {
   } catch { return iso; }
 };
 
+const getAvatarInitials = (name: string) => {
+  if (!name) return '??';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+};
+
 const getDateRangeDates = (range: string): { startDate?: string; endDate?: string } => {
   const now   = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -141,28 +151,28 @@ const getOrderStatus = (o: Order): string =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 const OrderStatusBadge: React.FC<{ status: string; compact?: boolean }> = ({ status }) => {
-  const base = `inline-flex items-center gap-1.5 h-6 px-[10px] rounded-full text-[11px] font-semibold border flex-shrink-0`;
+  const base = `inline-flex items-center gap-1.5 h-7 px-3 rounded-full text-[11.5px] font-bold border flex-shrink-0 transition-all`;
   const variants: Record<string, string> = {
-    Delivered:         'bg-emerald-50 text-emerald-700 border-emerald-100',
-    Completed:         'bg-emerald-50 text-emerald-700 border-emerald-100',
-    Shipped:           'bg-indigo-50 text-indigo-700 border-indigo-100',
-    'Out For Delivery':'bg-violet-50 text-violet-700 border-violet-100',
-    Packed:            'bg-cyan-50 text-cyan-700 border-cyan-100',
-    Processing:        'bg-blue-50 text-blue-700 border-blue-100',
-    'Pending Payment': 'bg-amber-50 text-amber-700 border-amber-100',
-    'Payment Failed':  'bg-red-50 text-red-600 border-red-100',
-    Cancelled:         'bg-red-50 text-red-600 border-red-100',
+    Delivered:          'bg-emerald-50 text-emerald-700 border-emerald-100',
+    Completed:          'bg-emerald-50 text-emerald-700 border-emerald-100',
+    Shipped:            'bg-indigo-50 text-indigo-700 border-indigo-100',
+    'Out For Delivery': 'bg-amber-50 text-amber-700 border-amber-100',
+    Packed:             'bg-purple-50 text-purple-700 border-purple-100',
+    Processing:         'bg-blue-50 text-blue-700 border-blue-100',
+    'Pending Payment':  'bg-amber-50 text-amber-700 border-amber-100',
+    'Payment Failed':   'bg-red-50 text-red-600 border-red-100',
+    Cancelled:          'bg-red-50 text-red-600 border-red-100',
   };
   const icons: Record<string, React.ReactNode> = {
-    Delivered:          <CheckCircle className="w-3 h-3" />,
-    Completed:          <CheckCircle className="w-3 h-3" />,
-    Cancelled:          <XCircle className="w-3 h-3" />,
-    'Payment Failed':   <XCircle className="w-3 h-3" />,
-    'Pending Payment':  <Clock className="w-3 h-3" />,
-    Shipped:            <Truck className="w-3 h-3" />,
-    'Out For Delivery': <Truck className="w-3 h-3" />,
-    Packed:             <Package className="w-3 h-3" />,
-    Processing:         <RefreshCw className="w-3 h-3" />,
+    Delivered:          <CheckCircle className="w-3.5 h-3.5" />,
+    Completed:          <CheckCircle className="w-3.5 h-3.5" />,
+    Cancelled:          <XCircle className="w-3.5 h-3.5" />,
+    'Payment Failed':   <XCircle className="w-3.5 h-3.5" />,
+    'Pending Payment':  <Clock className="w-3.5 h-3.5" />,
+    Shipped:            <Truck className="w-3.5 h-3.5" />,
+    'Out For Delivery': <Truck className="w-3.5 h-3.5" />,
+    Packed:             <Package className="w-3.5 h-3.5" />,
+    Processing:         <RefreshCw className="w-3.5 h-3.5" />,
   };
   return (
     <span className={`${base} ${variants[status] || 'bg-slate-50 text-slate-600 border-slate-100'}`}>
@@ -253,9 +263,7 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
 
   // ── Committed filter state ─────────────────────────────────────────────────
   const [searchCustomer,      setSearchCustomer]      = useState(() => readParam('q'));
-  const [searchOrderId,       setSearchOrderId]       = useState(() => readParam('orderId'));
   const [filterOrderStatus,   setFilterOrderStatus]   = useState(() => readParam('status', 'All'));
-  const [filterPaymentStatus, setFilterPaymentStatus] = useState(() => readParam('paymentStatus', 'All'));
   const [filterPaymentMethod, setFilterPaymentMethod] = useState(() => readParam('paymentMethod', 'All'));
   const [filterDateRange,     setFilterDateRange]     = useState(() => readParam('dateRange'));
   const [filterCustomStart,   setFilterCustomStart]   = useState(() => readParam('from'));
@@ -268,7 +276,6 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
 
   // ── Draft state for filters panel ──────────────────────────────────────────
   const [draftStatus,    setDraftStatus]    = useState(filterOrderStatus);
-  const [draftPayStatus, setDraftPayStatus] = useState(filterPaymentStatus);
   const [draftPayMethod, setDraftPayMethod] = useState(filterPaymentMethod);
   const [draftDateRange, setDraftDateRange] = useState(filterDateRange);
   const [draftFrom,      setDraftFrom]      = useState(filterCustomStart);
@@ -297,9 +304,7 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
   const syncUrl = useCallback(() => {
     const p: Record<string, string> = {};
     if (searchCustomer)                                    p.q             = searchCustomer;
-    if (searchOrderId)                                     p.orderId       = searchOrderId;
     if (filterOrderStatus   && filterOrderStatus   !== 'All') p.status       = filterOrderStatus;
-    if (filterPaymentStatus && filterPaymentStatus !== 'All') p.paymentStatus = filterPaymentStatus;
     if (filterPaymentMethod && filterPaymentMethod !== 'All') p.paymentMethod = filterPaymentMethod;
     if (filterDateRange)                                   p.dateRange     = filterDateRange;
     if (filterCustomStart)                                 p.from          = filterCustomStart;
@@ -309,17 +314,15 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
     if (filterMaxAmount)                                   p.maxAmount     = filterMaxAmount;
     if (page > 1)                                          p.page          = String(page);
     setSearchParams(p, { replace: true });
-  }, [searchCustomer, searchOrderId, filterOrderStatus, filterPaymentStatus, filterPaymentMethod,
-      filterDateRange, filterCustomStart, filterCustomEnd, filterSort, filterMinAmount, filterMaxAmount,
-      page, setSearchParams]);
+  }, [searchCustomer, filterOrderStatus, filterPaymentMethod, filterDateRange, filterCustomStart,
+      filterCustomEnd, filterSort, filterMinAmount, filterMaxAmount, page, setSearchParams]);
 
   // ── Build API params ───────────────────────────────────────────────────────
   const buildParams = useCallback((): GetOrdersParams => {
-    const params: GetOrdersParams = { page, limit };
-    const q = searchCustomer.trim() || searchOrderId.trim() || undefined;
+    const params: GetOrdersParams = { page, limit, paymentStatus: 'PAID' };
+    const q = searchCustomer.trim() || undefined;
     if (q)                               params.search        = q;
     if (filterOrderStatus   !== 'All')   params.orderStatus   = filterOrderStatus;
-    if (filterPaymentStatus !== 'All')   params.paymentStatus = filterPaymentStatus;
     if (filterPaymentMethod !== 'All')   params.paymentMethod = filterPaymentMethod;
     if (filterSort)                      params.sort          = filterSort;
     if (filterMinAmount)                 params.minAmount     = Number(filterMinAmount);
@@ -331,8 +334,8 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
       Object.assign(params, getDateRangeDates(filterDateRange));
     }
     return params;
-  }, [page, limit, searchCustomer, searchOrderId, filterOrderStatus, filterPaymentStatus, filterPaymentMethod,
-      filterSort, filterMinAmount, filterMaxAmount, filterDateRange, filterCustomStart, filterCustomEnd]);
+  }, [page, limit, searchCustomer, filterOrderStatus, filterPaymentMethod, filterSort,
+      filterMinAmount, filterMaxAmount, filterDateRange, filterCustomStart, filterCustomEnd]);
 
   // ── Core fetch ─────────────────────────────────────────────────────────────
   const fetchOrders = useCallback(async (soft = false) => {
@@ -364,18 +367,18 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
     debounceRef.current = setTimeout(() => { setPage(1); fetchOrders(false); }, 400);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchCustomer, searchOrderId]);
+  }, [searchCustomer]);
 
   // ── Filter / page changes → full skeleton reload ───────────────────────────
   useEffect(() => {
     fetchOrders(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterOrderStatus, filterPaymentStatus, filterPaymentMethod, filterDateRange,
+  }, [filterOrderStatus, filterPaymentMethod, filterDateRange,
       filterCustomStart, filterCustomEnd, filterSort, filterMinAmount, filterMaxAmount, page]);
 
   // ── Apply / Reset ──────────────────────────────────────────────────────────
   const applyFilters = () => {
-    setFilterOrderStatus(draftStatus);     setFilterPaymentStatus(draftPayStatus);
+    setFilterOrderStatus(draftStatus);
     setFilterPaymentMethod(draftPayMethod); setFilterDateRange(draftDateRange);
     setFilterCustomStart(draftFrom);        setFilterCustomEnd(draftTo);
     setFilterSort(draftSort);               setFilterMinAmount(draftMin);
@@ -384,9 +387,8 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
   };
 
   const resetFilters = () => {
-    setSearchCustomer('');   setSearchOrderId('');
+    setSearchCustomer('');
     setFilterOrderStatus('All');   setDraftStatus('All');
-    setFilterPaymentStatus('All'); setDraftPayStatus('All');
     setFilterPaymentMethod('All'); setDraftPayMethod('All');
     setFilterDateRange('');  setDraftDateRange('');
     setFilterCustomStart(''); setDraftFrom('');
@@ -399,7 +401,6 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
 
   const activeFilterCount = [
     filterOrderStatus   !== 'All',
-    filterPaymentStatus !== 'All',
     filterPaymentMethod !== 'All',
     !!filterDateRange,
     !!filterMinAmount || !!filterMaxAmount,
@@ -565,26 +566,15 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
 
       {/* ── Search + Filter Bar (Compact 44px height layout) ────────────────── */}
       <div className="space-y-2.5">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          {/* Customer search */}
+        <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2">
+          {/* Universal search input */}
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-slate-400 pointer-events-none" />
             <input
               type="text"
               value={searchCustomer}
               onChange={e => setSearchCustomer(e.target.value)}
-              placeholder="Search name, email, phone…"
-              className="w-full h-11 pl-10 pr-4 bg-white border border-slate-200 hover:border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-600/10 focus:outline-none rounded-[10px] text-[13px] text-slate-700 placeholder-slate-400 font-medium transition-all"
-            />
-          </div>
-          {/* Order ID search */}
-          <div className="relative sm:w-44 flex-shrink-0">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              value={searchOrderId}
-              onChange={e => setSearchOrderId(e.target.value)}
-              placeholder="Order ID…"
+              placeholder="Search by Order ID, Customer Name, Email or Phone..."
               className="w-full h-11 pl-10 pr-4 bg-white border border-slate-200 hover:border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-600/10 focus:outline-none rounded-[10px] text-[13px] text-slate-700 placeholder-slate-400 font-medium transition-all"
             />
           </div>
@@ -595,6 +585,15 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
             className="h-11 px-3 bg-white border border-slate-200 rounded-[10px] text-[13px] font-bold text-slate-600 focus:outline-none focus:border-blue-500 cursor-pointer flex-shrink-0"
           >
             {SORT_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+          {/* Date range selection */}
+          <select
+            value={filterDateRange}
+            onChange={e => { setFilterDateRange(e.target.value); setDraftDateRange(e.target.value); setPage(1); }}
+            className="h-11 px-3 bg-white border border-slate-200 rounded-[10px] text-[13px] font-bold text-slate-600 focus:outline-none focus:border-blue-500 cursor-pointer flex-shrink-0"
+          >
+            <option value="">All Time</option>
+            {DATE_RANGES.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
           {/* Filter toggle button */}
           <button
@@ -615,12 +614,20 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
               </span>
             )}
           </button>
+          {/* Export CSV button */}
+          <button 
+            onClick={exportToCSV}
+            className="h-11 px-4 rounded-[10px] border border-slate-200 bg-white text-slate-700 text-[13px] font-bold hover:bg-slate-50 transition-all flex items-center space-x-1.5 shadow-sm cursor-pointer flex-shrink-0"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export CSV</span>
+          </button>
         </div>
 
         {/* Expandable Filter Panel */}
         {showFilters && (
           <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-4 animate-fadeIn">
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {/* Order Status */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Order Status</label>
@@ -629,29 +636,12 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
                   {ORDER_STATUSES.map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
-              {/* Payment Status */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Payment Status</label>
-                <select value={draftPayStatus} onChange={e => setDraftPayStatus(e.target.value)}
-                  className="w-full h-9 px-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-semibold text-slate-700 focus:outline-none focus:border-blue-400 cursor-pointer">
-                  {PAYMENT_STATUSES.map(s => <option key={s}>{s}</option>)}
-                </select>
-              </div>
               {/* Payment Method */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Payment Method</label>
                 <select value={draftPayMethod} onChange={e => setDraftPayMethod(e.target.value)}
                   className="w-full h-9 px-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-semibold text-slate-700 focus:outline-none focus:border-blue-400 cursor-pointer">
                   {PAYMENT_METHODS.map(s => <option key={s}>{s}</option>)}
-                </select>
-              </div>
-              {/* Date Range */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Date Range</label>
-                <select value={draftDateRange} onChange={e => setDraftDateRange(e.target.value)}
-                  className="w-full h-9 px-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-semibold text-slate-700 focus:outline-none focus:border-blue-400 cursor-pointer">
-                  <option value="">All Time</option>
-                  {DATE_RANGES.map(r => <option key={r}>{r}</option>)}
                 </select>
               </div>
               {/* Min Amount */}
@@ -705,14 +695,16 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
           </div>
         )}
 
-        {/* Quick Tabs - All, Pending, Processing, Delivered, Cancelled */}
+        {/* Quick Tabs - Fulfillment states only */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           {[
-            { label: 'All',        value: 'All' },
-            { label: 'Pending',    value: 'Pending Payment' },
-            { label: 'Processing', value: 'Processing' },
-            { label: 'Delivered',  value: 'Delivered' },
-            { label: 'Cancelled',  value: 'Cancelled' },
+            { label: 'All',              value: 'All' },
+            { label: 'Processing',       value: 'Processing' },
+            { label: 'Packed',           value: 'Packed' },
+            { label: 'Shipped',          value: 'Shipped' },
+            { label: 'Out For Delivery', value: 'Out For Delivery' },
+            { label: 'Delivered',        value: 'Delivered' },
+            { label: 'Cancelled',        value: 'Cancelled' },
           ].map(tab => (
             <button
               key={tab.label}
@@ -755,22 +747,19 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
 
           {/* Table Header (13px Font) */}
           <div
-            className="hidden xl:grid items-center border-b border-slate-100 px-5 py-2.5 bg-slate-50/30 text-[13px] font-semibold text-slate-400 uppercase tracking-wider"
-            style={{ gridTemplateColumns: '16% 12% 14% 9% 9% 9% 6% 11% 10% 4%' }}
+            className="hidden xl:grid items-center border-b border-slate-100 px-5 py-3 bg-slate-50/30 text-[13px] font-semibold text-slate-400 uppercase tracking-wider"
+            style={{ gridTemplateColumns: '18% 28% 14% 10% 14% 12% 4%' }}
           >
             <div>Order ID</div>
             <div>Customer</div>
-            <div>Email</div>
             <div>Amount</div>
-            <div>Method</div>
-            <div>Pay Status</div>
-            <div className="text-center">Items</div>
-            <div>Created</div>
-            <div className="text-center">Order Status</div>
+            <div>Items</div>
+            <div>Created Date</div>
+            <div>Order Status</div>
             <div />
           </div>
 
-          {/* Table Rows (Compact 56px-60px height design) */}
+          {/* Table Rows */}
           <div className={`relative min-h-[180px] transition-opacity duration-200 ${isRefreshing ? 'opacity-40 pointer-events-none' : ''}`}>
             {orders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
@@ -778,14 +767,14 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
                   <ShoppingBag className="w-6 h-6 text-slate-200" />
                 </div>
                 <div>
-                  <div className="text-[14px] font-black text-slate-700">No Orders Found</div>
+                  <div className="text-[14px] font-black text-slate-700">No completed orders found.</div>
                   <p className="text-[11px] text-slate-400 font-medium mt-1">
-                    {activeFilterCount > 0 || searchCustomer || searchOrderId
+                    {activeFilterCount > 0 || searchCustomer
                       ? 'No results match your filters. Try adjusting them.'
                       : 'No orders have been placed yet.'}
                   </p>
                 </div>
-                {(activeFilterCount > 0 || searchCustomer || searchOrderId) && (
+                {(activeFilterCount > 0 || searchCustomer) && (
                   <button onClick={resetFilters}
                     className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg cursor-pointer transition-all">
                     Clear All Filters
@@ -797,12 +786,16 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
                 {orders.map((order, rowIdx) => {
                   const displayId = order.orderId || '—';
                   const rowKey    = order.orderId  || `order-row-${rowIdx}`;
+                  const customerName = getCustomerName(order);
+                  const customerEmail = getCustomerEmail(order);
+                  const customerPhone = order.shippingAddress?.phone || order.customerInfo?.phone || '';
+                  
                   return (
                     <div
                       key={rowKey}
                       onClick={() => order.orderId && onSelectOrder(order.orderId)}
-                      className="flex flex-col xl:grid items-start xl:items-center px-4.5 min-h-[56px] py-1.5 rounded-lg border border-slate-100 hover:border-blue-200 hover:bg-blue-50/20 transition-all duration-150 cursor-pointer group bg-white"
-                      style={{ gridTemplateColumns: '16% 12% 14% 9% 9% 9% 6% 11% 10% 4%' }}
+                      className="flex flex-col xl:grid items-start xl:items-center px-5 min-h-[56px] py-2 rounded-xl border border-slate-100 hover:border-blue-200 hover:shadow-md hover:shadow-slate-100/80 transition-all duration-200 cursor-pointer group bg-white gap-2 xl:gap-0"
+                      style={{ gridTemplateColumns: '18% 28% 14% 10% 14% 12% 4%' }}
                     >
                       {/* Order ID */}
                       <div className="flex items-center gap-2 min-w-0">
@@ -811,49 +804,52 @@ const OrderListPage: React.FC<OrderListPageProps> = ({ onSelectOrder }) => {
                         </div>
                         <button
                           onClick={e => order.orderId && copyOrderId(order.orderId, e)}
-                          className="text-[11px] font-bold text-slate-700 font-mono hover:text-blue-600 transition-colors cursor-pointer text-left truncate max-w-[90px]"
+                          className="text-[11px] font-bold text-slate-700 font-mono hover:text-blue-600 transition-colors cursor-pointer text-left truncate max-w-[110px]"
                           title={displayId}
                         >
-                          {displayId.length > 13 ? displayId.slice(0, 13) + '…' : displayId}
+                          {displayId.length > 15 ? displayId.slice(0, 15) + '…' : displayId}
                         </button>
                       </div>
-                      {/* Customer */}
-                      <div className="text-[13px] font-semibold text-slate-800 truncate pr-2 group-hover:text-blue-700 transition-colors">
-                        {getCustomerName(order)}
+
+                      {/* Customer Info (Avatar Card stacked) */}
+                      <div className="flex items-center gap-3 min-w-0 pr-2">
+                        <div className="w-9 h-9 rounded-full bg-slate-50 border border-slate-200/60 flex items-center justify-center flex-shrink-0 text-[11.5px] font-black text-slate-500 tracking-wider">
+                          {getAvatarInitials(customerName)}
+                        </div>
+                        <div className="min-w-0 leading-tight">
+                          <div className="text-[13px] font-bold text-slate-800 truncate group-hover:text-blue-700 transition-colors">{customerName}</div>
+                          <div className="text-[11px] text-slate-400 font-semibold truncate mt-0.5">{customerEmail}</div>
+                          {customerPhone && (
+                            <div className="text-[10px] text-slate-400 font-bold font-mono mt-0.5">{customerPhone}</div>
+                          )}
+                        </div>
                       </div>
-                      {/* Email */}
-                      <div className="text-[12px] text-slate-500 font-medium truncate pr-2">
-                        {getCustomerEmail(order)}
+
+                      {/* Amount + Items Count stacked */}
+                      <div className="leading-tight">
+                        <div className="text-[13px] font-black text-slate-950">{formatCurrency(order.totalAmount || 0)}</div>
+                        <div className="text-[10.5px] text-slate-400 font-bold mt-0.5">
+                          {order.items?.length ?? 0} Item{(order.items?.length ?? 0) !== 1 ? 's' : ''}
+                        </div>
                       </div>
-                      {/* Amount */}
-                      <div className="text-[13px] font-extrabold text-slate-900 tabular-nums">
-                        {formatCurrency(order.totalAmount)}
+
+                      {/* Items Details Summary */}
+                      <div className="text-[12.5px] font-bold text-slate-655 leading-none">
+                        {order.items?.length ?? 0} Item{(order.items?.length ?? 0) !== 1 ? 's' : ''}
                       </div>
-                      {/* Payment Method */}
-                      <div className="text-[12px] text-slate-600 font-semibold truncate pr-1">
-                        {order.paymentMethod || '—'}
-                      </div>
-                      {/* Payment Status (11px Compact Badge) */}
-                      <div>
-                        <PaymentStatusBadge status={order.paymentStatus || 'Pending'} />
-                      </div>
-                      {/* Items Count */}
-                      <div className="text-[13px] font-bold text-slate-600 text-center">
-                        {order.items?.length ?? 0}
-                      </div>
+
                       {/* Created Date */}
-                      <div className="flex items-center gap-1 text-[12px] text-slate-500 font-semibold">
-                        <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                      <div className="flex items-center gap-1.5 text-[12px] text-slate-500 font-semibold leading-none">
+                        <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                         <span className="truncate">{formatDate(order.createdAt)}</span>
                       </div>
-                      {/* Order Status (11px Compact Badge) */}
-                      <div className="flex justify-center">
-                        <OrderStatusBadge status={getOrderStatus(order)} compact />
+
+                      {/* Order Status */}
+                      <div className="flex items-center">
+                        <OrderStatusBadge status={getOrderStatus(order)} />
                       </div>
-                      {/* Arrow */}
-                      <div className="flex justify-end">
-                        <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-400 transition-colors" />
-                      </div>
+
+                   
                     </div>
                   );
                 })}

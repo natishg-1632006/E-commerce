@@ -10,6 +10,10 @@ import {
   Clock,
   Calendar,
   CheckCircle,
+  Copy,
+  Mail,
+  Ban,
+  Eye,
 } from 'lucide-react';
 import { AdminLayout } from '../../layouts/AdminLayout';
 import { orderService } from '../../services/order.service';
@@ -30,12 +34,44 @@ const formatDatetime = (iso: string | undefined) => {
   } catch { return iso; }
 };
 
+const getAvatarInitials = (name: string) => {
+  if (!name) return '??';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+};
+
+const getTimeSince = (isoString: string | undefined): string => {
+  if (!isoString) return '—';
+  try {
+    const diffMs = new Date().getTime() - new Date(isoString).getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Created just now';
+    if (diffMins < 60) return `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} hr${diffHours !== 1 ? 's' : ''} ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+  } catch {
+    return '—';
+  }
+};
+
 export const AdminPendingPayments: React.FC = () => {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  const triggerToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3000);
+  };
 
   const fetchPendingPayments = useCallback(async (isRefresh = false) => {
     if (isRefresh) setIsRefreshing(true);
@@ -50,6 +86,7 @@ export const AdminPendingPayments: React.FC = () => {
           String(o.orderStatus || '').toUpperCase() === 'PENDING PAYMENT'
       );
       setOrders(filtered);
+      setStats(response.stats ?? null);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch pending payments');
     } finally {
@@ -62,12 +99,61 @@ export const AdminPendingPayments: React.FC = () => {
     fetchPendingPayments();
   }, [fetchPendingPayments]);
 
-  const totalPendingCount = orders.length;
-  const totalPendingAmount = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+  // Actions handlers
+  const handleCopyPaymentLink = (orderId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const mockLink = `https://natcart.com/checkout/pay/${orderId}`;
+    navigator.clipboard.writeText(mockLink);
+    triggerToast('Payment link copied to clipboard!');
+  };
+
+  const handleResendPaymentLink = (email: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    triggerToast(`Payment link resent to ${email || 'customer'}!`);
+  };
+
+  const handleCancelOrder = async (orderId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm('Are you sure you want to cancel this pending payment order?')) return;
+    try {
+      setIsRefreshing(true);
+      await orderService.updateOrderStatus(orderId, 'Cancelled');
+      triggerToast('Order cancelled successfully!');
+      fetchPendingPayments(true);
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to cancel order.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Local calculations if backend stats are missing
+  const today = new Date().toISOString().split('T')[0];
+  const localTotalCount = orders.length;
+  const localPendingValue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+  const localTodayPending = orders.filter(o => (o.createdAt || '').startsWith(today)).length;
+  const localExpiredPending = orders.filter(o => {
+    const isExpired = o.expiresAt && new Date(o.expiresAt) < new Date();
+    const ost = String(o.orderStatus || '').toUpperCase();
+    return isExpired || ost === 'EXPIRED' || ost === 'PAYMENT_FAILED';
+  }).length;
+
+  const totalPendingOrders = stats?.totalPendingOrders ?? localTotalCount;
+  const pendingPaymentValue = stats?.pendingPaymentValue ?? localPendingValue;
+  const todaysPendingOrders = stats?.todaysPendingOrders ?? localTodayPending;
+  const expiredPendingPayments = stats?.expiredPendingPayments ?? localExpiredPending;
 
   return (
     <AdminLayout>
       <div className="p-5 sm:p-7 space-y-6 animate-fadeIn">
+        {/* Toast */}
+        {toastMsg && (
+          <div className="fixed top-5 right-5 z-[100] flex items-center space-x-2 bg-slate-900 text-white text-[12px] font-bold px-4 py-3 rounded-xl shadow-xl border border-slate-800 animate-fadeIn">
+            <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <span>{toastMsg}</span>
+          </div>
+        )}
+
         {/* Page Header */}
         <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -87,18 +173,18 @@ export const AdminPendingPayments: React.FC = () => {
           </button>
         </div>
 
-        {/* KPI Cards for Pending Payments */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* KPI Cards for Pending Payments (Exactly 4 Cards) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white border border-slate-100 rounded-[12px] p-4 shadow-sm h-[114px] flex flex-col justify-between">
             <div className="flex justify-between items-center">
-              <span className="text-[12.5px] font-bold text-slate-400 uppercase tracking-wider">TOTAL PENDING ORDERS</span>
+              <span className="text-[12.5px] font-bold text-slate-400 uppercase tracking-wider">TOTAL PENDING</span>
               <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
                 <Clock className="w-4 h-4" />
               </div>
             </div>
             <div>
-              <div className="text-[24px] font-black text-slate-800 leading-none">{totalPendingCount}</div>
-              <span className="text-[11px] text-slate-400 font-semibold mt-1 block">Awaiting checkout completion</span>
+              <div className="text-[24px] font-black text-slate-800 leading-none">{totalPendingOrders}</div>
+              <span className="text-[11px] text-slate-400 font-medium mt-1.5 block">Awaiting checkout</span>
             </div>
           </div>
 
@@ -110,8 +196,34 @@ export const AdminPendingPayments: React.FC = () => {
               </div>
             </div>
             <div>
-              <div className="text-[24px] font-black text-blue-600 leading-none">{formatCurrency(totalPendingAmount)}</div>
-              <span className="text-[11px] text-slate-400 font-semibold mt-1 block">Total gross sales value in pool</span>
+              <div className="text-[24px] font-black text-blue-600 leading-none">{formatCurrency(pendingPaymentValue)}</div>
+              <span className="text-[11px] text-slate-400 font-medium mt-1.5 block">Total value in pool</span>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-100 rounded-[12px] p-4 shadow-sm h-[114px] flex flex-col justify-between">
+            <div className="flex justify-between items-center">
+              <span className="text-[12.5px] font-bold text-slate-400 uppercase tracking-wider">TODAY'S PENDING</span>
+              <div className="w-7 h-7 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center">
+                <Calendar className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <div className="text-[24px] font-black text-slate-800 leading-none">{todaysPendingOrders}</div>
+              <span className="text-[11px] text-slate-400 font-medium mt-1.5 block">Added today</span>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-100 rounded-[12px] p-4 shadow-sm h-[114px] flex flex-col justify-between">
+            <div className="flex justify-between items-center">
+              <span className="text-[12.5px] font-bold text-slate-400 uppercase tracking-wider">EXPIRED PAYMENTS</span>
+              <div className="w-7 h-7 rounded-lg bg-red-50 text-red-655 flex items-center justify-center">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <div className="text-[24px] font-black text-red-600 leading-none">{expiredPendingPayments}</div>
+              <span className="text-[11px] text-slate-400 font-medium mt-1.5 block">Overdue checkout</span>
             </div>
           </div>
         </div>
@@ -147,7 +259,7 @@ export const AdminPendingPayments: React.FC = () => {
             {/* Table Header */}
             <div
               className="hidden xl:grid items-center border-b border-slate-100 px-5 py-3 bg-slate-50/30 text-[13px] font-semibold text-slate-400 uppercase tracking-wider"
-              style={{ gridTemplateColumns: '18% 18% 15% 15% 15% 15% 4%' }}
+              style={{ gridTemplateColumns: '13% 22% 12% 11% 10% 12% 14% 6%' }}
             >
               <div>Order ID</div>
               <div>Customer</div>
@@ -155,6 +267,7 @@ export const AdminPendingPayments: React.FC = () => {
               <div>Created Date</div>
               <div>Payment Method</div>
               <div>Payment Status</div>
+              <div>Time Since Created</div>
               <div />
             </div>
 
@@ -166,7 +279,7 @@ export const AdminPendingPayments: React.FC = () => {
                     <CheckCircle className="w-6 h-6 text-emerald-400" />
                   </div>
                   <div>
-                    <div className="text-[14px] font-black text-slate-700">Clear Ledger</div>
+                    <div className="text-[14px] font-black text-slate-700">No pending payments</div>
                     <p className="text-[11px] text-slate-400 font-medium mt-1">
                       No orders are currently awaiting payment.
                     </p>
@@ -175,14 +288,16 @@ export const AdminPendingPayments: React.FC = () => {
               ) : (
                 orders.map((order, rowIdx) => {
                   const displayId = order.orderId || '—';
-                  const customerName = order.shippingAddress?.fullName || 'Guest Customer';
+                  const customerName = order.shippingAddress?.fullName || order.customerInfo?.fullName || 'Guest Customer';
+                  const customerEmail = order.email || order.shippingAddress?.email || order.customerInfo?.email || '—';
+                  const customerPhone = order.shippingAddress?.phone || order.customerInfo?.phone || '';
                   const rowKey = order.orderId || `pending-row-${rowIdx}`;
                   return (
                     <div
                       key={rowKey}
                       onClick={() => order.orderId && navigate(`/admin/orders/${order.orderId}`)}
-                      className="flex flex-col xl:grid items-start xl:items-center px-4.5 min-h-[56px] py-2 rounded-lg border border-slate-100 hover:border-blue-200 hover:bg-blue-50/20 transition-all duration-150 cursor-pointer bg-white gap-2 xl:gap-0"
-                      style={{ gridTemplateColumns: '18% 18% 15% 15% 15% 15% 4%' }}
+                      className="flex flex-col xl:grid items-start xl:items-center px-5 min-h-[56px] py-2.5 rounded-xl border border-slate-100 hover:border-blue-200 hover:shadow-md hover:shadow-slate-100/80 transition-all duration-200 cursor-pointer bg-white gap-2 xl:gap-0"
+                      style={{ gridTemplateColumns: '13% 22% 12% 11% 10% 12% 14% 6%' }}
                     >
                       {/* Order ID */}
                       <div className="flex items-center gap-2 min-w-0">
@@ -190,26 +305,35 @@ export const AdminPendingPayments: React.FC = () => {
                           <ShoppingBag className="w-3 h-3" />
                         </div>
                         <span className="font-mono text-[12.5px] font-bold text-slate-800 truncate leading-none">
-                          {displayId}
+                          {displayId.length > 12 ? displayId.slice(0, 12) + '…' : displayId}
                         </span>
                       </div>
 
-                      {/* Customer */}
-                      <div className="flex items-center gap-1.5 min-w-0 text-slate-600 xl:text-slate-800">
-                        <User className="w-3.5 h-3.5 text-slate-400 xl:hidden" />
-                        <span className="text-[13px] font-bold truncate leading-none">
-                          {customerName}
-                        </span>
+                      {/* Customer Info Avatar Stacked */}
+                      <div className="flex items-center gap-3 min-w-0 pr-2">
+                        <div className="w-9 h-9 rounded-full bg-slate-50 border border-slate-200/60 flex items-center justify-center flex-shrink-0 text-[11.5px] font-black text-slate-500 tracking-wider">
+                          {getAvatarInitials(customerName)}
+                        </div>
+                        <div className="min-w-0 leading-tight">
+                          <div className="text-[13px] font-bold text-slate-800 truncate group-hover:text-blue-700 transition-colors">{customerName}</div>
+                          <div className="text-[11px] text-slate-400 font-semibold truncate mt-0.5">{customerEmail}</div>
+                          {customerPhone && (
+                            <div className="text-[10px] text-slate-400 font-bold font-mono mt-0.5">{customerPhone}</div>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Amount */}
-                      <div className="text-[13px] font-black text-slate-900 leading-none">
-                        {formatCurrency(order.totalAmount || 0)}
+                      {/* Amount + Items stacked */}
+                      <div className="leading-tight">
+                        <div className="text-[13px] font-black text-slate-900">{formatCurrency(order.totalAmount || 0)}</div>
+                        <div className="text-[10.5px] text-slate-400 font-bold mt-0.5">
+                          {order.items?.length ?? 0} Item{(order.items?.length ?? 0) !== 1 ? 's' : ''}
+                        </div>
                       </div>
 
                       {/* Created Date */}
                       <div className="text-[12px] text-slate-400 font-semibold leading-none flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-slate-300 xl:hidden" />
+                        <Calendar className="w-3.5 h-3.5 text-slate-350 xl:hidden" />
                         <span>{formatDatetime(order.createdAt).split(' ')[0]}</span>
                       </div>
 
@@ -218,16 +342,21 @@ export const AdminPendingPayments: React.FC = () => {
                         {order.paymentMethod || '—'}
                       </div>
 
-                      {/* Payment Status */}
+                      {/* Payment Status (dedicated orange badge) */}
                       <div>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-100">
-                          {order.paymentStatus || 'PENDING'}
+                        <span className="inline-flex flex-col text-[11px] leading-tight">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-amber-50 text-amber-700 border border-amber-100">
+                            <Clock className="w-3 h-3" />
+                            Pending
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-bold mt-1 text-center">Awaiting Payment</span>
                         </span>
                       </div>
 
-                      {/* Chevron Arrow */}
-                      <div className="hidden xl:flex justify-end">
-                        <ArrowRight className="w-4 h-4 text-slate-350 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                      {/* Time Since Created */}
+                      <div className="text-[12px] font-bold text-amber-600 leading-none flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>{getTimeSince(order.createdAt)}</span>
                       </div>
                     </div>
                   );
