@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   Tag,
+  CreditCard,
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../store';
@@ -25,6 +26,7 @@ const navItems = [
   { key: 'products', label: 'Products', icon: Package, path: '/admin/products' },
   { key: 'categories', label: 'Categories', icon: Tag, path: '/admin/categories' },
   { key: 'orders', label: 'Orders', icon: ShoppingBag, path: '/admin/orders' },
+  { key: 'pending-payments', label: 'Pending Payments', icon: CreditCard, path: '/admin/pending-payments' },
   { key: 'customers', label: 'Customers', icon: Users, path: '/admin/customers' },
   { key: 'inventory', label: 'Inventory', icon: Boxes, path: '/admin/inventory' },
   { key: 'analytics', label: 'Analytics', icon: BarChart3, path: '/admin/analytics' },

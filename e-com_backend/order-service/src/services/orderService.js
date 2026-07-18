@@ -372,57 +372,52 @@ const getAllOrders = async (params = {}) => {
   const totalPages = Math.ceil(total / limit);
   const startIndex = (page - 1) * limit;
   const data = filtered.slice(startIndex, startIndex + limit);
-  // Calculate statistics from the filtered dataset (before pagination slice)
+  // Calculate statistics from the global database dataset (Items)
   const todayStr = new Date().toISOString().split('T')[0];
-  const todaysOrdersCount = filtered.filter(o => (o.createdAt || '').startsWith(todayStr)).length;
+  const todaysOrdersCount = Items.filter(o => (o.createdAt || '').startsWith(todayStr)).length;
   
-  const pendingOrdersCount = filtered.filter(o => {
-    const st = String(o.orderStatus || o.status || '').toUpperCase();
-    return st === 'PENDING_PAYMENT' || st === 'PENDING PAYMENT';
-  }).length;
-  
-  const processingOrdersCount = filtered.filter(o => {
+  const processingOrdersCount = Items.filter(o => {
     const st = String(o.orderStatus || o.status || '').toUpperCase();
     return st === 'PROCESSING';
   }).length;
   
-  const packedOrdersCount = filtered.filter(o => {
+  const packedOrdersCount = Items.filter(o => {
     const st = String(o.orderStatus || o.status || '').toUpperCase();
     return st === 'PACKED';
   }).length;
   
-  const shippedOrdersCount = filtered.filter(o => {
+  const shippedOrdersCount = Items.filter(o => {
     const st = String(o.orderStatus || o.status || '').toUpperCase();
     return st === 'SHIPPED';
   }).length;
   
-  const outForDeliveryOrdersCount = filtered.filter(o => {
+  const outForDeliveryOrdersCount = Items.filter(o => {
     const st = String(o.orderStatus || o.status || '').toUpperCase();
     return st === 'OUT_FOR_DELIVERY' || st === 'OUT FOR DELIVERY';
   }).length;
   
-  const deliveredOrdersCount = filtered.filter(o => {
+  const deliveredOrdersCount = Items.filter(o => {
     const st = String(o.orderStatus || o.status || '').toUpperCase();
     return st === 'DELIVERED';
   }).length;
   
-  const completedOrdersCount = filtered.filter(o => {
+  const completedOrdersCount = Items.filter(o => {
     const st = String(o.orderStatus || o.status || '').toUpperCase();
     return st === 'COMPLETED';
   }).length;
   
-  const cancelledOrdersCount = filtered.filter(o => {
+  const cancelledOrdersCount = Items.filter(o => {
     const st = String(o.orderStatus || o.status || '').toUpperCase();
     return st === 'CANCELLED' || st === 'CANCELED';
   }).length;
   
-  // Revenue: Sum totalAmount only where paymentStatus is PAID (case-insensitive)
-  const revenue = filtered
+  // Revenue: Sum totalAmount only where paymentStatus is PAID (case-insensitive) on the global database
+  const revenue = Items
     .filter(o => String(o.paymentStatus || '').toUpperCase() === 'PAID')
     .reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
   
   const statistics = {
-    totalOrders: total,
+    totalOrders: Items.length,
     todaysOrders: todaysOrdersCount,
     processing: processingOrdersCount,
     packed: packedOrdersCount,
