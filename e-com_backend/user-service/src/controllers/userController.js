@@ -45,9 +45,19 @@ const getUserById = async (req, res, next) => {
   }
 };
 
+const updateUserByIdAdmin = async (req, res, next) => {
+  try {
+    const profile = await service.updateProfile(req.params.userId, req.body);
+    success(res, profile);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
   getAllUsers,
   getUserById,
+  updateUserByIdAdmin,
 };

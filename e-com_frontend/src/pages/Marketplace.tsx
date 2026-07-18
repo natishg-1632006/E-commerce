@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MainLayout } from '../layouts/MainLayout';
 import { Card } from '../components/ui/Card';
@@ -6,16 +6,29 @@ import { Checkbox } from '../components/ui/Checkbox';
 import { Button } from '../components/ui/Button';
 import { Rating } from '../components/ui/Rating';
 import { Price } from '../components/ui/Price';
-
 import { Search } from '../components/ui/Search';
 import { Pagination } from '../components/ui/Pagination';
 import { Drawer } from '../components/ui/Drawer';
-import { ShoppingCart, SlidersHorizontal, ArrowUpDown, ChevronDown, Check, Laptop, Headphones, Watch, Sparkles, Star, Truck } from 'lucide-react';
+import {
+  ShoppingCart,
+  SlidersHorizontal,
+  ArrowUpDown,
+  ChevronDown,
+  Check,
+  Laptop,
+  Headphones,
+  Watch,
+  Sparkles,
+  Star,
+  Truck,
+  ShoppingBag,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { cn } from '../lib/cn';
-import { useDispatch } from 'react-redux';
-import { addToCart } from '../store/cartSlice';
+import { useDispatch, useSelector } from 'react-redux';
+import { addToCartBackend } from '../store/cartSlice';
+import type { RootState, AppDispatch } from '../store';
 
 import macbookImg from '../assets/products/macbook.jpg';
 import rogImg from '../assets/products/rog.jpg';
@@ -23,49 +36,26 @@ import dellImg from '../assets/products/dell.jpg';
 import guideImg from '../assets/products/guide.jpg';
 import heroBannerImg from '../assets/future_tech_banner.jpg';
 
-interface Product {
-  id: string;
-  name: string;
-  brand: 'Apple' | 'Dell' | 'ASUS';
-  price: number;
-  listPrice?: number;
-  saleBadge?: string;
-  rating: number;
-  reviews: number;
-  image: string;
-  // Specifications
-  ram: '16GB' | '32GB' | '64GB';
-  storage: '512GB' | '1TB' | '2TB';
-}
+import { productService } from '../services/product.service';
 
 const SkeletonProductCard: React.FC = () => {
   return (
     <div className="p-3.5 rounded-[28px] border border-slate-200/50 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.02)] flex flex-col justify-between items-stretch overflow-hidden shimmer-sweep select-none">
-      {/* Thumbnail image placeholder */}
       <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-200 overflow-hidden flex-shrink-0" />
-
-      {/* Content Container */}
       <div className="flex flex-col flex-grow justify-between text-left mt-4">
         <div className="space-y-2 mb-2">
-          {/* Brand */}
           <div className="h-3 w-12 bg-slate-300 rounded" />
-          {/* Name */}
           <div className="h-4 w-3/4 bg-slate-300 rounded mt-1.5" />
-          {/* Rating */}
           <div className="flex items-center space-x-1.5 pt-1">
             <div className="h-3.5 w-16 bg-slate-200 rounded" />
             <div className="h-3.5 w-6 bg-slate-200 rounded" />
           </div>
-          {/* Specs */}
           <div className="flex space-x-1.5 pt-1">
             <div className="h-4.5 w-10 bg-slate-200 rounded-[5px]" />
             <div className="h-4.5 w-10 bg-slate-200 rounded-[5px]" />
           </div>
         </div>
-
         <div className="border-t border-slate-100/80 my-3" />
-
-        {/* Pricing & Cart Button */}
         <div className="flex items-center justify-between flex-shrink-0">
           <div className="flex flex-col space-y-1">
             <div className="h-4 w-16 bg-slate-300 rounded" />
@@ -78,64 +68,49 @@ const SkeletonProductCard: React.FC = () => {
   );
 };
 
+const mapCategoryToDbValue = (name: string): string => {
+  const norm = name.toLowerCase();
+  if (norm === 'laptops' || norm === 'laptop') return 'Laptop';
+  if (norm === 'smartwatches' || norm === 'smartwatch') return 'Smartwatch';
+  if (norm === 'audio') return 'Audio';
+  if (norm === 'gaming') return 'Gaming';
+  if (norm === 'accessories') return 'Accessories';
+  return name;
+};
+
 export const Marketplace: React.FC = () => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Reset shop grid view and filters when route location changes (e.g. clicking Home link/Logo)
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const brand = params.get('brand');
-    const search = params.get('search');
+  const { items: cartItems } = useSelector((state: RootState) => state.cart);
 
-    if (brand || search) {
-      if (brand) {
-        setSelectedBrands([brand]);
-      } else {
-        setSelectedBrands([]);
-      }
-      if (search) {
-        setSearchQuery(search);
-      } else {
-        setSearchQuery('');
-      }
-      setSelectedRam([]);
-      setSelectedStorage([]);
-      setMinPrice(0);
-      setMaxPrice(400000);
-      setShowShopGrid(true);
-    } else {
-      setShowShopGrid(false);
-      setSelectedBrands([]);
-      setSelectedRam([]);
-      setSelectedStorage([]);
-      setMinPrice(0);
-      setMaxPrice(400000);
-      setSearchQuery('');
-    }
-  }, [location]);
+  // Dynamic products and categories list
+  const [rawProducts, setRawProducts] = useState<any[]>([]);
+  const [categoriesList, setCategoriesList] = useState<any[]>([]);
+  const [trendingProducts, setTrendingProducts] = useState<any[]>([]);
+
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedRam, setSelectedRam] = useState<string[]>([]);
   const [selectedStorage, setSelectedStorage] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState('newest');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(8);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
+
   const [showShopGrid, setShowShopGrid] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [trendingLoading, setTrendingLoading] = useState(true);
+
   // Price filter states
   const [minPrice, setMinPrice] = useState<number>(0);
   const [maxPrice, setMaxPrice] = useState<number>(400000);
-
-  // Trigger simulated loading skeleton state on filter/sorting modifications
-  useEffect(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [selectedBrands, selectedRam, selectedStorage, minPrice, maxPrice, sortBy, searchQuery, currentPage]);
 
   // Responsive Drawer state
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
@@ -146,172 +121,210 @@ export const Marketplace: React.FC = () => {
 
   useClickOutside(sortRef, () => setIsSortOpen(false));
 
-  const products: Product[] = [
-    {
-      id: '1',
-      name: 'MacBook Pro M3 Max',
-      brand: 'Apple',
-      price: 349900,
-      rating: 5,
-      reviews: 124,
-      image: macbookImg,
-      ram: '64GB',
-      storage: '1TB',
-    },
-    {
-      id: '2',
-      name: 'ROG Zephyrus G16',
-      brand: 'ASUS',
-      price: 219990,
-      listPrice: 249990,
-      saleBadge: 'Sale -12%',
-      rating: 4,
-      reviews: 89,
-      image: rogImg,
-      ram: '32GB',
-      storage: '2TB',
-    },
-    {
-      id: '3',
-      name: 'Dell XPS 15 Plus',
-      brand: 'Dell',
-      price: 189900,
-      rating: 5,
-      reviews: 215,
-      image: dellImg,
-      ram: '16GB',
-      storage: '512GB',
-    },
-    {
-      id: '4',
-      name: 'MacBook Air M3 Slim',
-      brand: 'Apple',
-      price: 114900,
-      rating: 5,
-      reviews: 64,
-      image: guideImg,
-      ram: '16GB',
-      storage: '512GB',
-    },
-    {
-      id: '5',
-      name: 'ASUS TUF Gaming A15',
-      brand: 'ASUS',
-      price: 104900,
-      listPrice: 119900,
-      saleBadge: 'Sale -12%',
-      rating: 4,
-      reviews: 43,
-      image: rogImg,
-      ram: '16GB',
-      storage: '1TB',
-    },
-    {
-      id: '6',
-      name: 'Dell Latitude Enterprise',
-      brand: 'Dell',
-      price: 139900,
-      rating: 4,
-      reviews: 31,
-      image: dellImg,
-      ram: '32GB',
-      storage: '512GB',
-    },
-    {
-      id: '7',
-      name: 'Mac Studio Developer Pro',
-      brand: 'Apple',
-      price: 289900,
-      rating: 5,
-      reviews: 78,
-      image: macbookImg,
-      ram: '64GB',
-      storage: '2TB',
-    },
-    {
-      id: '8',
-      name: 'ASUS ProArt Creator',
-      brand: 'ASUS',
-      price: 229900,
-      rating: 5,
-      reviews: 19,
-      image: guideImg,
-      ram: '32GB',
-      storage: '2TB',
-    },
-    {
-      id: '9',
-      name: 'Dell Precision Workstation',
-      brand: 'Dell',
-      price: 209900,
-      listPrice: 229900,
-      saleBadge: 'Sale -8%',
-      rating: 5,
-      reviews: 57,
-      image: dellImg,
-      ram: '64GB',
-      storage: '1TB',
-    },
-    {
-      id: '10',
-      name: 'iPhone 15 Pro Max',
-      brand: 'Apple',
-      price: 149900,
-      rating: 5,
-      reviews: 98,
-      image: guideImg,
-      ram: '16GB',
-      storage: '512GB',
-    },
-    {
-      id: '11',
-      name: 'ASUS ROG Phone 8',
-      brand: 'ASUS',
-      price: 94900,
-      rating: 5,
-      reviews: 34,
-      image: rogImg,
-      ram: '16GB',
-      storage: '512GB',
-    },
-    {
-      id: '12',
-      name: 'Dell Inspiron 16 Premium',
-      brand: 'Dell',
-      price: 84900,
-      rating: 4,
-      reviews: 41,
-      image: dellImg,
-      ram: '16GB',
-      storage: '1TB',
-    },
-  ];
-
-  // Reset page number on filter parameters change
+  // Debounced search logic (400ms)
   useEffect(() => {
-    setCurrentPage(1);
-  }, [selectedBrands, selectedRam, selectedStorage, searchQuery, minPrice, maxPrice, itemsPerPage]);
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Load Categories on component mount
+  useEffect(() => {
+    const fetchCategories = async () => {
+      setCategoriesLoading(true);
+      try {
+        const res = await productService.getCategories();
+        const list = res.data || (Array.isArray(res) ? res : []);
+        setCategoriesList(list.filter((c: any) => (c.status || 'ACTIVE').toUpperCase() === 'ACTIVE'));
+      } catch (err) {
+        console.error('Error fetching categories:', err);
+      } finally {
+        setCategoriesLoading(false);
+      }
+    };
+    fetchCategories();
+  }, []);
+
+  // Sync URL query params
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const brand = params.get('brand');
+    const search = params.get('search');
+    const category = params.get('category');
+
+    if (brand || search || category) {
+      if (brand) setSelectedBrands([brand]);
+      else setSelectedBrands([]);
+
+      if (search) setSearchQuery(search);
+      else setSearchQuery('');
+
+      if (category) setSelectedCategory(category);
+      else setSelectedCategory(null);
+
+      setSelectedRam([]);
+      setSelectedStorage([]);
+      setMinPrice(0);
+      setMaxPrice(400000);
+      setShowShopGrid(true);
+    } else {
+      setShowShopGrid(false);
+      setSelectedBrands([]);
+      setSelectedCategory(null);
+      setSelectedRam([]);
+      setSelectedStorage([]);
+      setMinPrice(0);
+      setMaxPrice(400000);
+      setSearchQuery('');
+    }
+  }, [location]);
+
+  // Load backend products reactively based on search & category
+  useEffect(() => {
+    const fetchProducts = async () => {
+      setIsLoading(true);
+      try {
+        const params: any = {
+          limit: 100, // Fetch all products for the category to filter locally
+        };
+
+        if (debouncedSearch) params.search = debouncedSearch;
+        
+        if (selectedCategory) {
+          const catObj = categoriesList.find(
+            (c: any) => (c.categoryId || c.id) === selectedCategory
+          );
+          const catName = catObj ? catObj.name : selectedCategory;
+          params.category = mapCategoryToDbValue(catName);
+        }
+
+        const res = await productService.getProducts(params);
+        const list = res.data || res.products || (Array.isArray(res) ? res : []);
+        setRawProducts(list);
+        setCurrentPage(1);
+      } catch (err) {
+        console.error('Error fetching catalog products:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (showShopGrid) {
+      fetchProducts();
+    }
+  }, [showShopGrid, selectedCategory, debouncedSearch, categoriesList]);
+
+  // Extract dynamic filter checkboxes based on currently loaded category products
+  const availableBrands = useMemo(() => {
+    const brands = rawProducts.map((p) => p.brand).filter(Boolean);
+    return Array.from(new Set(brands)).sort() as string[];
+  }, [rawProducts]);
+
+  const availableRam = useMemo(() => {
+    const rams = rawProducts.map((p) => p.specifications?.ram).filter(Boolean);
+    return Array.from(new Set(rams)).sort() as string[];
+  }, [rawProducts]);
+
+  const availableStorage = useMemo(() => {
+    const storages = rawProducts.map((p) => p.specifications?.storage).filter(Boolean);
+    return Array.from(new Set(storages)).sort() as string[];
+  }, [rawProducts]);
+
+  // Filter and sort raw products list locally
+  const filteredProducts = useMemo(() => {
+    let result = [...rawProducts];
+
+    // Brand filter
+    if (selectedBrands.length > 0) {
+      result = result.filter((p) => selectedBrands.includes(p.brand));
+    }
+
+    // RAM filter
+    if (selectedRam.length > 0) {
+      result = result.filter((p) => selectedRam.includes(p.specifications?.ram || ''));
+    }
+
+    // Storage filter
+    if (selectedStorage.length > 0) {
+      result = result.filter((p) => selectedStorage.includes(p.specifications?.storage || ''));
+    }
+
+    // Price range filter
+    result = result.filter((p) => p.price >= minPrice && p.price <= maxPrice);
+
+    // Sorting
+    switch (sortBy) {
+      case 'price-low':
+        result.sort((a, b) => a.price - b.price);
+        break;
+      case 'price-high':
+        result.sort((a, b) => b.price - a.price);
+        break;
+      case 'newest':
+      default:
+        result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        break;
+    }
+
+    return result;
+  }, [rawProducts, selectedBrands, selectedRam, selectedStorage, minPrice, maxPrice, sortBy]);
+
+  // Paginate local list
+  const productsList = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredProducts.slice(start, start + itemsPerPage);
+  }, [filteredProducts, currentPage, itemsPerPage]);
+
+  // Sync results metadata
+  useEffect(() => {
+    setTotalResults(filteredProducts.length);
+    setTotalPages(Math.max(1, Math.ceil(filteredProducts.length / itemsPerPage)));
+  }, [filteredProducts, itemsPerPage]);
+
+  // Fetch trending products for landing page
+  useEffect(() => {
+    const fetchTrending = async () => {
+      setTrendingLoading(true);
+      try {
+        const res = await productService.getProducts({ limit: 5 });
+        const list = res.data || res.products || (Array.isArray(res) ? res : []);
+        setTrendingProducts(list);
+      } catch (err) {
+        console.error('Error loading trending products:', err);
+      } finally {
+        setTrendingLoading(false);
+      }
+    };
+    if (!showShopGrid) {
+      fetchTrending();
+    }
+  }, [showShopGrid]);
 
   const handleBrandChange = (brand: string) => {
     setSelectedBrands((prev) =>
       prev.includes(brand) ? prev.filter((b) => b !== brand) : [...prev, brand]
     );
+    setCurrentPage(1);
   };
 
   const handleRamChange = (ram: string) => {
     setSelectedRam((prev) =>
       prev.includes(ram) ? prev.filter((r) => r !== ram) : [...prev, ram]
     );
+    setCurrentPage(1);
   };
 
   const handleStorageChange = (storage: string) => {
     setSelectedStorage((prev) =>
       prev.includes(storage) ? prev.filter((s) => s !== storage) : [...prev, storage]
     );
+    setCurrentPage(1);
   };
 
   const handleClearAll = () => {
     setSelectedBrands([]);
+    setSelectedCategory(null);
     setSelectedRam([]);
     setSelectedStorage([]);
     setMinPrice(0);
@@ -320,42 +333,60 @@ export const Marketplace: React.FC = () => {
     toast.success('All filters cleared!');
   };
 
-  const handleAddToCart = (product: Product) => {
-    dispatch(
-      addToCart({
-        id: product.id,
-        name: product.name,
-        brand: product.brand,
-        price: product.price,
-        image: product.image,
-        ram: product.ram,
-        storage: product.storage,
-      })
-    );
+  const handleAddToCart = async (product: any) => {
+    const pId = product.productId || product.id;
+    const cartItem = cartItems.find((item: any) => item.id === pId);
+    const currentCartQty = cartItem ? cartItem.quantity : 0;
+    const stock = product.stock !== undefined ? product.stock : 10;
+
+    if (stock === 0) {
+      toast.error('This product is out of stock.');
+      return;
+    }
+
+    if (currentCartQty + 1 > stock) {
+      toast.error(`Cannot add more items. Only ${stock} units are in stock.`);
+      return;
+    }
+
+    try {
+      await dispatch(
+        addToCartBackend({
+          productId: pId,
+          quantity: 1,
+        })
+      ).unwrap();
+      toast.success(`${product.name} added to cart!`);
+    } catch (err: any) {
+      toast.error(err || 'Failed to add to cart.');
+    }
   };
 
-  const filteredProducts = products.filter((product) => {
-    const matchesBrand = selectedBrands.length === 0 || selectedBrands.includes(product.brand);
-    const matchesPrice = product.price >= minPrice && product.price <= maxPrice;
-    const matchesRam = selectedRam.length === 0 || selectedRam.includes(product.ram);
-    const matchesStorage = selectedStorage.length === 0 || selectedStorage.includes(product.storage);
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          product.brand.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesBrand && matchesPrice && matchesRam && matchesStorage && matchesSearch;
-  });
+  const getProductImage = (product: any) => {
+    if (product.images && product.images.length > 0) {
+      return product.images[0].url;
+    }
+    // Fallbacks
+    const name = (product.name || '').toLowerCase();
+    if (name.includes('macbook')) return macbookImg;
+    if (name.includes('zephyrus') || name.includes('tuf') || name.includes('rog')) return rogImg;
+    if (name.includes('xps') || name.includes('latitude') || name.includes('precision')) return dellImg;
+    return guideImg;
+  };
 
-  // Sort list
-  const sortedProducts = [...filteredProducts].sort((a, b) => {
-    if (sortBy === 'price-low') return a.price - b.price;
-    if (sortBy === 'price-high') return b.price - a.price;
-    return b.id.localeCompare(a.id); // Default newest arrivals
-  });
-
-  // Paginated chunk parameters
-  const totalPages = Math.max(1, Math.ceil(sortedProducts.length / itemsPerPage));
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = sortedProducts.slice(indexOfFirstItem, indexOfLastItem);
+  const getCategoryIcon = (name: string) => {
+    const norm = name.toLowerCase();
+    if (norm.includes('computing') || norm.includes('laptop') || norm.includes('pc') || norm.includes('computer')) {
+      return Laptop;
+    }
+    if (norm.includes('audio') || norm.includes('headphone') || norm.includes('sound') || norm.includes('speaker')) {
+      return Headphones;
+    }
+    if (norm.includes('wear') || norm.includes('watch') || norm.includes('smartwatch')) {
+      return Watch;
+    }
+    return Sparkles;
+  };
 
   const sortOptions = [
     { value: 'newest', label: 'Newest Arrivals' },
@@ -365,10 +396,9 @@ export const Marketplace: React.FC = () => {
 
   const pageSizeOptions = [4, 8, 12, 16];
 
-
-
   const hasActiveFilters =
     selectedBrands.length > 0 ||
+    selectedCategory !== null ||
     selectedRam.length > 0 ||
     selectedStorage.length > 0 ||
     searchQuery !== '' ||
@@ -377,34 +407,53 @@ export const Marketplace: React.FC = () => {
 
   const renderFilters = () => (
     <div className="flex flex-col items-stretch space-y-5.5">
+      {/* Category List Filters */}
+      <div className="flex flex-col items-start space-y-2.5">
+        <span className="text-[11px] font-bold text-slate-800 tracking-tight">Category</span>
+        <button
+          onClick={() => setSelectedCategory(null)}
+          className={cn(
+            "text-[11.5px] font-bold py-0.5 transition-colors cursor-pointer text-left pl-1",
+            !selectedCategory ? "text-blue-600" : "text-slate-550 hover:text-slate-800"
+          )}
+        >
+          All Categories
+        </button>
+        {categoriesList.map((cat) => (
+          <button
+            key={cat.categoryId || cat.id}
+            onClick={() => setSelectedCategory(cat.categoryId || cat.id)}
+            className={cn(
+              "text-[11.5px] font-semibold py-0.5 transition-colors cursor-pointer text-left pl-1 flex items-center space-x-1.5",
+              selectedCategory === (cat.categoryId || cat.id) ? "text-blue-600 font-extrabold" : "text-slate-550 hover:text-slate-800"
+            )}
+          >
+            <span>{cat.name}</span>
+          </button>
+        ))}
+      </div>
+
       {/* Brand Filters */}
       <div className="flex flex-col items-start space-y-2.5">
         <span className="text-[11px] font-bold text-slate-800 tracking-tight">Brand</span>
-        <Checkbox
-          id="brand-apple"
-          checked={selectedBrands.includes('Apple')}
-          onChange={() => handleBrandChange('Apple')}
-          label="Apple"
-        />
-        <Checkbox
-          id="brand-dell"
-          checked={selectedBrands.includes('Dell')}
-          onChange={() => handleBrandChange('Dell')}
-          label="Dell"
-        />
-        <Checkbox
-          id="brand-asus"
-          checked={selectedBrands.includes('ASUS')}
-          onChange={() => handleBrandChange('ASUS')}
-          label="ASUS"
-        />
+        {availableBrands.length > 0 ? (
+          availableBrands.map((br) => (
+            <Checkbox
+              key={br}
+              id={`brand-${br.toLowerCase().replace(/[^a-z0-9]/g, '')}`}
+              checked={selectedBrands.includes(br)}
+              onChange={() => handleBrandChange(br)}
+              label={br}
+            />
+          ))
+        ) : (
+          <span className="text-[10.5px] font-medium text-slate-400 pl-1 italic">No brands available</span>
+        )}
       </div>
 
       {/* Price Range Slider Filter */}
       <div className="flex flex-col items-stretch space-y-2.5 w-full">
         <span className="text-[11px] font-bold text-slate-800 tracking-tight">Price Range</span>
-        
-        {/* Min / Max Inputs */}
         <div className="flex items-center space-x-2">
           <div className="relative flex-1 h-[34px]">
             <input
@@ -431,12 +480,9 @@ export const Marketplace: React.FC = () => {
           </div>
         </div>
 
-        {/* Dual slider visual track */}
         <div className="pt-2 flex flex-col space-y-2">
           <div className="relative w-full h-5 select-none">
-            {/* Base track */}
             <div className="absolute top-2 left-0 right-0 h-1 bg-slate-200 rounded-lg"></div>
-            {/* Colored active range track */}
             <div
               className="absolute top-2 h-1 bg-blue-600 rounded-lg"
               style={{
@@ -444,7 +490,6 @@ export const Marketplace: React.FC = () => {
                 right: `${100 - (maxPrice / 400000) * 100}%`,
               }}
             ></div>
-            {/* Min Slider Input */}
             <input
               type="range"
               min="0"
@@ -457,7 +502,6 @@ export const Marketplace: React.FC = () => {
               className="absolute top-0 left-0 w-full h-5 appearance-none bg-transparent pointer-events-none cursor-pointer outline-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-600 [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:shadow-md [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-blue-600 [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:shadow-md"
               style={{ zIndex: minPrice > 200000 ? 5 : 4 }}
             />
-            {/* Max Slider Input */}
             <input
               type="range"
               min="0"
@@ -470,7 +514,7 @@ export const Marketplace: React.FC = () => {
               className="absolute top-0 left-0 w-full h-5 appearance-none bg-transparent pointer-events-none cursor-pointer outline-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-600 [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:shadow-md [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-blue-600 [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:shadow-md"
             />
           </div>
-          <div className="flex justify-between text-[9.5px] text-slate-450 font-bold pt-0.5">
+          <div className="flex justify-between text-[9.5px] text-slate-455 font-bold pt-0.5">
             <span className="flex items-center">Min:&nbsp;<Price value={minPrice} /></span>
             <span className="flex items-center">Max:&nbsp;<Price value={maxPrice} /></span>
           </div>
@@ -480,60 +524,50 @@ export const Marketplace: React.FC = () => {
       {/* Memory RAM Specifications */}
       <div className="flex flex-col items-start space-y-2.5">
         <span className="text-[11px] font-bold text-slate-800 tracking-tight">Memory (RAM)</span>
-        <Checkbox
-          id="ram-16gb"
-          checked={selectedRam.includes('16GB')}
-          onChange={() => handleRamChange('16GB')}
-          label="16 GB"
-        />
-        <Checkbox
-          id="ram-32gb"
-          checked={selectedRam.includes('32GB')}
-          onChange={() => handleRamChange('32GB')}
-          label="32 GB"
-        />
-        <Checkbox
-          id="ram-64gb"
-          checked={selectedRam.includes('64GB')}
-          onChange={() => handleRamChange('64GB')}
-          label="64 GB"
-        />
+        {availableRam.length > 0 ? (
+          availableRam.map((ram) => (
+            <Checkbox
+              key={ram}
+              id={`ram-${ram.toLowerCase().replace(/[^a-z0-9]/g, '')}`}
+              checked={selectedRam.includes(ram)}
+              onChange={() => handleRamChange(ram)}
+              label={ram}
+            />
+          ))
+        ) : (
+          <span className="text-[10.5px] font-medium text-slate-400 pl-1 italic">No RAM options available</span>
+        )}
       </div>
 
       {/* Storage Specifications */}
       <div className="flex flex-col items-start space-y-2.5">
         <span className="text-[11px] font-bold text-slate-800 tracking-tight">Storage Space</span>
-        <Checkbox
-          id="storage-512gb"
-          checked={selectedStorage.includes('512GB')}
-          onChange={() => handleStorageChange('512GB')}
-          label="512 GB SSD"
-        />
-        <Checkbox
-          id="storage-1tb"
-          checked={selectedStorage.includes('1TB')}
-          onChange={() => handleStorageChange('1TB')}
-          label="1 TB SSD"
-        />
-        <Checkbox
-          id="storage-2tb"
-          checked={selectedStorage.includes('2TB')}
-          onChange={() => handleStorageChange('2TB')}
-          label="2 TB SSD"
-        />
+        {availableStorage.length > 0 ? (
+          availableStorage.map((st) => (
+            <Checkbox
+              key={st}
+              id={`storage-${st.toLowerCase().replace(/[^a-z0-9]/g, '')}`}
+              checked={selectedStorage.includes(st)}
+              onChange={() => handleStorageChange(st)}
+              label={st}
+            />
+          ))
+        ) : (
+          <span className="text-[10.5px] font-medium text-slate-400 pl-1 italic">No storage options available</span>
+        )}
       </div>
     </div>
   );
 
   const renderHomeLanding = !showShopGrid && !hasActiveFilters;
 
-  // Scroll to top when transitioning between landing page and shop grid catalog view
+  // Scroll to top on landing transition
   useEffect(() => {
     try {
       window.scrollTo({
         top: 0,
         left: 0,
-        behavior: 'auto'
+        behavior: 'auto',
       });
       document.body.scrollTop = 0;
       if (document.documentElement) {
@@ -548,22 +582,18 @@ export const Marketplace: React.FC = () => {
     return (
       <MainLayout>
         <div className="w-full flex flex-col items-stretch space-y-12 select-none">
-          
-          {/* Hero Banner Section (Screenshot 3 & 4) */}
+          {/* Hero Banner Section */}
           <section className="bg-slate-50/50 rounded-[32px] border border-slate-200/50 p-6 sm:p-10 lg:p-12 flex flex-col lg:flex-row items-center justify-between gap-8 text-left">
             <div className="flex-1 space-y-6">
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 leading-tight tracking-tight max-w-lg">
                 Discover the <span className="text-blue-600 italic">Future</span> of Technology
               </h1>
-              
-              {/* Dynamic Description based on Mobile/Desktop */}
-              <p className="text-xs sm:text-sm text-slate-500 font-semibold leading-relaxed max-w-md hidden sm:block">
+              <p className="text-xs sm:text-sm text-slate-550 font-semibold leading-relaxed max-w-md hidden sm:block">
                 Explore premium gadgets, laptops, gaming gear, and smart devices powered by innovation. Curated by experts, delivered by intelligence.
               </p>
-              <p className="text-xs text-slate-500 font-semibold leading-relaxed max-w-sm block sm:hidden">
+              <p className="text-xs text-slate-550 font-semibold leading-relaxed max-w-sm block sm:hidden">
                 Curated AI-driven recommendations for enthusiasts and professionals alike.
               </p>
-
               <div className="flex items-center space-x-3.5 pt-2">
                 <button
                   onClick={() => setShowShopGrid(true)}
@@ -579,7 +609,6 @@ export const Marketplace: React.FC = () => {
                 </button>
               </div>
             </div>
-
             <div className="flex-1 w-full max-w-xl lg:max-w-none">
               <img
                 src={heroBannerImg}
@@ -589,7 +618,7 @@ export const Marketplace: React.FC = () => {
             </div>
           </section>
 
-          {/* Shop by Category / Shop Categories (Screenshot 1 & 4) */}
+          {/* Shop Categories Circles */}
           <section className="space-y-6">
             <div className="flex items-center justify-between">
               <div className="text-left">
@@ -610,34 +639,45 @@ export const Marketplace: React.FC = () => {
               </button>
             </div>
 
-            {/* Categories circle grid */}
             <div className="grid grid-cols-3 gap-3.5 sm:gap-6">
-              {[
-                { label: 'Computing', icon: Laptop, brandFilter: 'Apple' },
-                { label: 'Audio', icon: Headphones, brandFilter: 'ASUS' },
-                { label: 'Wearables', icon: Watch, brandFilter: 'Dell' }
-              ].map((cat) => {
-                const IconComponent = cat.icon;
-                return (
-                  <button
-                    key={cat.label}
-                    onClick={() => {
-                      setSelectedBrands([cat.brandFilter]);
-                      setShowShopGrid(true);
-                    }}
-                    className="p-4 sm:p-6 bg-white border border-slate-200/60 rounded-[24px] sm:rounded-[32px] flex flex-col items-center justify-center space-y-3 hover:border-blue-300 hover:shadow-md transition-all active:scale-98 cursor-pointer select-none"
-                  >
-                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-700 flex-shrink-0">
-                      <IconComponent className="w-5.5 h-5.5 sm:w-7 sm:h-7 text-slate-800" />
-                    </div>
-                    <span className="text-[11px] sm:text-xs font-black text-slate-800 tracking-tight">{cat.label}</span>
-                  </button>
-                );
-              })}
+              {categoriesLoading ? (
+                Array.from({ length: 3 }).map((_, idx) => (
+                  <div key={idx} className="p-4 sm:p-6 bg-white border border-slate-200/60 rounded-[24px] sm:rounded-[32px] flex flex-col items-center justify-center space-y-3 shimmer-sweep">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-slate-200 animate-pulse" />
+                    <div className="h-3 w-16 bg-slate-200 rounded animate-pulse" />
+                  </div>
+                ))
+              ) : (
+                categoriesList.slice(0, 3).map((cat) => {
+                  const IconComponent = getCategoryIcon(cat.name);
+                  const imgUrl = cat.image ? (typeof cat.image === 'string' ? cat.image : cat.image.url) : null;
+                  return (
+                    <button
+                      key={cat.categoryId || cat.id}
+                      onClick={() => {
+                        setSelectedCategory(cat.categoryId || cat.id);
+                        setShowShopGrid(true);
+                      }}
+                      className="p-4 sm:p-6 bg-white border border-slate-200/60 rounded-[24px] sm:rounded-[32px] flex flex-col items-center justify-center space-y-3 hover:border-blue-300 hover:shadow-md transition-all active:scale-98 cursor-pointer select-none"
+                    >
+                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-700 flex-shrink-0 overflow-hidden">
+                        {imgUrl ? (
+                          <img src={imgUrl} alt={cat.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <IconComponent className="w-5.5 h-5.5 sm:w-7 sm:h-7 text-slate-800" />
+                        )}
+                      </div>
+                      <span className="text-[11px] sm:text-xs font-black text-slate-800 tracking-tight leading-tight">
+                        {cat.name}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </section>
 
-          {/* Gray Brand Names logos list (Screenshot 1) */}
+          {/* Brands logo ticker */}
           <section className="py-2 border-t border-b border-slate-100 flex flex-wrap items-center justify-around gap-y-4 gap-x-6 text-[10px] sm:text-[11px] font-black text-slate-350 tracking-[0.2em] uppercase select-none">
             <span>Techcore</span>
             <span>Quantum</span>
@@ -647,13 +687,13 @@ export const Marketplace: React.FC = () => {
             <span>Omega</span>
           </section>
 
-          {/* Trending Today (Screenshot 1) */}
+          {/* Trending Today */}
           <section className="space-y-5 text-left">
             <h2 className="text-lg font-black text-slate-900 tracking-tight">Trending Today</h2>
             
-            {/* Mobile View: Row Cards (Screenshot 1 replica) */}
+            {/* Mobile View: Row Cards */}
             <div className="grid grid-cols-1 gap-3.5 block sm:hidden">
-              {isLoading ? (
+              {trendingLoading ? (
                 Array.from({ length: 2 }).map((_, idx) => (
                   <div
                     key={`skeleton-mobile-${idx}`}
@@ -671,167 +711,121 @@ export const Marketplace: React.FC = () => {
                   </div>
                 ))
               ) : (
-                [
-                  {
-                    id: '2',
-                    name: 'SonicPro Wireless X2',
-                    category: 'ACOUSTICS',
-                    price: 24900,
-                    listPrice: 29900,
-                    image: rogImg,
-                  },
-                  {
-                    id: '3',
-                    name: 'Vanguard Health Smartwatch Pro',
-                    category: 'WEARABLES',
-                    price: 38900,
-                    image: guideImg,
-                  }
-                ].map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => navigate(`/product/${item.id}`)}
-                    className="bg-white border border-slate-200/60 rounded-3xl p-3.5 flex items-center justify-between shadow-sm hover:shadow transition-all cursor-pointer"
-                  >
-                    <div className="flex items-center space-x-3.5 min-w-0">
-                      <div className="w-18 h-18 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center p-1.5 flex-shrink-0">
-                        <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
-                      </div>
-                      <div className="min-w-0 text-left">
-                        <span className="text-[9px] font-black text-blue-650 tracking-wider uppercase">{item.category}</span>
-                        <h4 className="text-[11.5px] font-extrabold text-slate-855 truncate mt-0.5">{item.name}</h4>
-                        <div className="flex items-baseline space-x-2 mt-1">
-                          <Price value={item.price} className="text-xs font-black text-blue-600" />
-                          {item.listPrice && (
-                            <Price value={item.listPrice} className="text-[10px] text-slate-455 line-through font-bold" />
-                          )}
+                trendingProducts.slice(0, 2).map((item) => {
+                  const imgUrl = getProductImage(item);
+                  return (
+                    <div
+                      key={item.productId || item.id}
+                      onClick={() => navigate(`/product/${item.productId || item.id}`)}
+                      className="bg-white border border-slate-200/60 rounded-3xl p-3.5 flex items-center justify-between shadow-sm hover:shadow transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-3.5 min-w-0">
+                        <div className="w-18 h-18 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center p-1.5 flex-shrink-0">
+                          <img src={imgUrl} alt={item.name} className="w-full h-full object-contain" />
+                        </div>
+                        <div className="min-w-0 text-left">
+                          <span className="text-[9px] font-black text-blue-650 tracking-wider uppercase">{item.brand}</span>
+                          <h4 className="text-[11.5px] font-extrabold text-slate-855 truncate mt-0.5">{item.name}</h4>
+                          <div className="flex items-baseline space-x-2 mt-1">
+                            <Price value={item.price} className="text-xs font-black text-blue-600" />
+                          </div>
                         </div>
                       </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAddToCart(item);
+                        }}
+                        className="w-9 h-9 rounded-full bg-blue-50/70 hover:bg-blue-600 text-slate-800 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shadow-sm flex-shrink-0"
+                      >
+                        <ShoppingCart className="w-4 h-4 stroke-[2.2px]" />
+                      </button>
                     </div>
-                    
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        dispatch(
-                          addToCart({
-                            id: item.id,
-                            name: item.name,
-                            brand: item.category,
-                            price: item.price,
-                            image: item.image,
-                            ram: 'Standard',
-                            storage: 'Standard'
-                          })
-                        );
-                      }}
-                      className="w-9 h-9 rounded-full bg-blue-50/70 hover:bg-blue-600 text-slate-800 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shadow-sm flex-shrink-0"
-                    >
-                      <ShoppingCart className="w-4 h-4 stroke-[2.2px]" />
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
-            {/* Desktop View: Standard Product Cards (5-in-a-row) */}
+            {/* Desktop View: Featured Products cards (5-in-a-row) */}
             <div className="hidden sm:grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 lg:gap-5">
-              {isLoading ? (
+              {trendingLoading ? (
                 Array.from({ length: 5 }).map((_, idx) => (
                   <SkeletonProductCard key={`skeleton-trending-${idx}`} />
                 ))
               ) : (
-                products.slice(0, 5).map((prod) => (
-                  <div
-                    key={prod.id}
-                    onClick={() => navigate(`/product/${prod.id}`)}
-                    className="group relative bg-white border border-slate-200/60 rounded-[30px] p-4 flex flex-col justify-between hover:shadow-[0_24px_50px_rgba(15,23,42,0.04)] hover:-translate-y-1 transition-all duration-350 select-none text-left cursor-pointer"
-                  >
-                    <div className="relative aspect-[4/3] w-full rounded-[22px] overflow-hidden bg-slate-50 flex items-center justify-center mb-4">
-                      <img
-                        src={prod.image}
-                        alt={prod.name}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
-                      />
-                      {prod.saleBadge && (
-                        <div className="absolute top-3 left-3 bg-white border border-red-500/80 text-red-550 font-black text-[9.5px] tracking-wide uppercase px-2.5 py-0.5 rounded-full shadow-sm">
-                          {prod.saleBadge}
+                trendingProducts.map((prod) => {
+                  const imgUrl = getProductImage(prod);
+                  return (
+                    <div
+                      key={prod.productId || prod.id}
+                      onClick={() => navigate(`/product/${prod.productId || prod.id}`)}
+                      className="group relative bg-white border border-slate-200/60 rounded-[30px] p-4 flex flex-col justify-between hover:shadow-[0_24px_50px_rgba(15,23,42,0.04)] hover:-translate-y-1 transition-all duration-350 select-none text-left cursor-pointer"
+                    >
+                      <div className="relative aspect-[4/3] w-full rounded-[22px] overflow-hidden bg-slate-50 flex items-center justify-center mb-4">
+                        <img
+                          src={imgUrl}
+                          alt={prod.name}
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
+                        />
+                      </div>
+                      <div className="flex flex-col flex-grow justify-between text-left">
+                        <div className="space-y-1">
+                          <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-widest leading-none block">{prod.brand}</span>
+                          <h3 className="text-[13.5px] font-black text-slate-905 tracking-tight leading-snug mt-1 group-hover:text-blue-600 transition-colors line-clamp-2 min-h-[36px]">
+                            {prod.name}
+                          </h3>
+                          <div className="flex items-center space-x-1 mt-1.5 flex-wrap gap-y-1">
+                            <span className="px-2 py-0.5 rounded bg-slate-50 text-[9px] font-bold text-slate-455 border border-slate-100/80">
+                              {prod.specifications?.ram || 'Standard'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-slate-50 text-[9px] font-bold text-slate-455 border border-slate-100/80">
+                              {prod.specifications?.storage || 'Standard'}
+                            </span>
+                          </div>
                         </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col flex-grow justify-between text-left">
-                      <div className="space-y-1">
-                        <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-widest leading-none block">{prod.brand}</span>
-                        <h3 className="text-[13.5px] font-black text-slate-905 tracking-tight leading-snug mt-1 group-hover:text-blue-600 transition-colors line-clamp-2 min-h-[36px]">
-                          {prod.name}
-                        </h3>
-                        <div className="flex items-center space-x-1 mt-1.5 flex-wrap gap-y-1">
-                          <span className="px-2 py-0.5 rounded bg-slate-50 text-[9px] font-bold text-slate-455 border border-slate-100/80">
-                            {prod.ram}
-                          </span>
-                          <span className="px-2 py-0.5 rounded bg-slate-50 text-[9px] font-bold text-slate-455 border border-slate-100/80">
-                            {prod.storage}
-                          </span>
+                        <div className="border-t border-slate-100/80 my-3" />
+                        <div className="flex items-center justify-between flex-shrink-0">
+                          <div className="flex flex-col text-left">
+                            <Price value={prod.price} className="text-[14.5px] font-black text-slate-900 leading-none" />
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAddToCart(prod);
+                            }}
+                            className="w-9 h-9 rounded-full bg-blue-50/70 hover:bg-blue-600 text-slate-800 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shadow-sm"
+                          >
+                            <ShoppingCart className="w-4 h-4 stroke-[2.2px]" />
+                          </button>
                         </div>
                       </div>
-
-                      <div className="border-t border-slate-100/80 my-3" />
-
-                      <div className="flex items-center justify-between flex-shrink-0">
-                        <div className="flex flex-col text-left">
-                          <Price value={prod.price} className="text-[14.5px] font-black text-slate-900 leading-none" />
-                          {prod.listPrice && (
-                            <Price value={prod.listPrice} className="text-[10.5px] text-slate-400 line-through font-bold mt-1" />
-                          )}
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            dispatch(
-                              addToCart({
-                                id: prod.id,
-                                name: prod.name,
-                                brand: prod.brand,
-                                price: prod.price,
-                                image: prod.image,
-                                ram: prod.ram,
-                                storage: prod.storage
-                              })
-                            );
-                          }}
-                          className="w-9 h-9 rounded-full bg-blue-50/70 hover:bg-blue-600 text-slate-800 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shadow-sm"
-                        >
-                          <ShoppingCart className="w-4 h-4 stroke-[2.2px]" />
-                        </button>
-                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </section>
 
-          {/* The NatCart Edge (Screenshot 2) */}
+          {/* Features cards */}
           <section className="bg-slate-50/20 rounded-[32px] border border-slate-100 p-6 sm:p-10 text-center space-y-8">
             <h2 className="text-xl font-black text-slate-900 tracking-tight">The NatCart Edge</h2>
-            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
               {[
                 {
                   title: 'AI-Powered Insights',
                   desc: 'Personalized tech recommendations tailored to your unique workflow.',
-                  icon: Sparkles
+                  icon: Sparkles,
                 },
                 {
                   title: 'Certified Authenticity',
                   desc: 'Every product is verified and covered by our premium global warranty.',
-                  icon: Check
+                  icon: Check,
                 },
                 {
                   title: 'Rapid Delivery',
                   desc: 'Free worldwide shipping on all orders over $150 with real-time tracking.',
-                  icon: Truck
-                }
+                  icon: Truck,
+                },
               ].map((feat, idx) => {
                 const IconComponent = feat.icon;
                 return (
@@ -849,24 +843,18 @@ export const Marketplace: React.FC = () => {
             </div>
           </section>
 
-          {/* Trusted by Creators (Screenshot 2) */}
+          {/* Testimonial review */}
           <section className="bg-blue-50/30 rounded-[32px] border border-blue-100/50 p-6 sm:p-10 flex flex-col items-center justify-center text-center space-y-6">
             <h2 className="text-xl font-black text-slate-900 tracking-tight">Trusted by Creators</h2>
-            
             <div className="max-w-xl bg-white border border-slate-200/50 rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col items-center space-y-4">
-              {/* Star review icons */}
               <div className="flex items-center space-x-1">
                 {[...Array(5)].map((_, i) => (
                   <Star key={i} className="w-4 h-4 fill-blue-600 text-blue-600" />
                 ))}
               </div>
-
-              {/* Quote text */}
-              <p className="text-xs sm:text-sm text-slate-650 font-bold italic leading-relaxed">
+              <p className="text-xs sm:text-sm text-slate-655 font-bold italic leading-relaxed">
                 "The AI curation on NatCart is genuinely impressive. It found exactly the workstation components I needed without me having to dig through hundreds of pages."
               </p>
-
-              {/* Creator info */}
               <div className="flex items-center space-x-3 mt-2 select-none">
                 <div className="w-10 h-10 rounded-full bg-slate-100 overflow-hidden flex items-center justify-center border border-slate-200">
                   <span className="text-[10px] font-black text-slate-500 uppercase">SJ</span>
@@ -877,15 +865,12 @@ export const Marketplace: React.FC = () => {
                 </div>
               </div>
             </div>
-
-            {/* Slider dots indicators */}
             <div className="flex items-center space-x-2 pt-2 select-none">
               <span className="w-6 h-1 rounded-full bg-blue-600" />
               <span className="w-1.5 h-1.5 rounded-full bg-slate-350" />
               <span className="w-1.5 h-1.5 rounded-full bg-slate-350" />
             </div>
           </section>
-
         </div>
       </MainLayout>
     );
@@ -895,7 +880,7 @@ export const Marketplace: React.FC = () => {
     <MainLayout>
       <div className="w-full flex flex-col items-stretch space-y-8 select-none">
         
-        {/* Mobile/Tablet Filter & Search Toggle row */}
+        {/* Mobile/Tablet Filter & Search row */}
         <div className="flex lg:hidden items-center justify-between gap-3 mb-2">
           <div className="flex-grow">
             <Search value={searchQuery} onChange={setSearchQuery} placeholder="Search hardware..." />
@@ -912,10 +897,9 @@ export const Marketplace: React.FC = () => {
           </Button>
         </div>
 
-        {/* Content Layout */}
+        {/* Content catalog Layout */}
         <div className="w-full grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
-          
-          {/* Left Column: Filter Sidebar - Sticky on Desktop/Laptop, hidden on Mobile/Tablet */}
+          {/* Left Column Filters Sticky Sidebar */}
           <aside className="hidden lg:block lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto col-span-1 select-none">
             <Card variant="simple" className="p-6 border-slate-200 text-left bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.015)]">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-5">
@@ -933,22 +917,18 @@ export const Marketplace: React.FC = () => {
             </Card>
           </aside>
 
-          {/* Right Column: Products Content Area */}
+          {/* Right Column: Catalog Products Grid */}
           <section className="col-span-1 lg:col-span-3 flex flex-col space-y-6">
-            
-            {/* List Header controls */}
             <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
-              {/* Sleeker results tag info */}
               <div className="text-left flex items-center space-x-2">
                 <span className="text-sm font-bold text-slate-900 tracking-tight">Technology Catalog</span>
                 <span className="text-[10px] font-extrabold text-blue-700 bg-blue-50 border border-blue-100 rounded-full px-2 py-0.5 shadow-sm">
-                  {filteredProducts.length} Results
+                  {totalResults} Results
                 </span>
               </div>
 
-              {/* Custom Selector controls */}
+              {/* Sort controls */}
               <div className="flex items-center space-x-3">
-                {/* Premium custom Sort dropdown button */}
                 <div className="relative inline-block text-left" ref={sortRef}>
                   <button
                     onClick={() => setIsSortOpen(!isSortOpen)}
@@ -979,94 +959,81 @@ export const Marketplace: React.FC = () => {
               </div>
             </div>
 
-            {/* Redesigned 4-in-a-Row Product Grid */}
+            {/* Catalog Grid */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-5">
               {isLoading ? (
                 Array.from({ length: itemsPerPage }).map((_, idx) => (
                   <SkeletonProductCard key={`skeleton-catalog-${idx}`} />
                 ))
               ) : (
-                currentItems.map((prod) => (
-                  <div
-                    key={prod.id}
-                    onClick={() => navigate(`/product/${prod.id}`)}
-                    className="p-3.5 rounded-[28px] border border-slate-200/50 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.02)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.06)] hover:-translate-y-1 transition-all duration-350 flex flex-col justify-between items-stretch overflow-hidden group cursor-pointer"
-                  >
-                    {/* Thumbnail image */}
-                    <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-50/30 overflow-hidden flex items-center justify-center flex-shrink-0">
-                      <img
-                        src={prod.image}
-                        alt={prod.name}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
-                      />
-                      {prod.saleBadge && (
-                        <div className="absolute top-3 left-3 bg-white border border-red-500/80 text-red-550 font-black text-[9.5px] tracking-wide uppercase px-2.5 py-0.5 rounded-full shadow-sm">
-                          {prod.saleBadge}
+                productsList.map((prod) => {
+                  const imgUrl = getProductImage(prod);
+                  return (
+                    <div
+                      key={prod.productId || prod.id}
+                      onClick={() => navigate(`/product/${prod.productId || prod.id}`)}
+                      className="p-3.5 rounded-[28px] border border-slate-200/50 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.02)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.06)] hover:-translate-y-1 transition-all duration-350 flex flex-col justify-between items-stretch overflow-hidden group cursor-pointer"
+                    >
+                      <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-50/30 overflow-hidden flex items-center justify-center flex-shrink-0">
+                        <img
+                          src={imgUrl}
+                          alt={prod.name}
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
+                        />
+                      </div>
+                      <div className="flex flex-col flex-grow justify-between text-left mt-3">
+                        <div className="space-y-1 mb-2">
+                          <span className="text-[10px] font-black text-blue-650 tracking-wider uppercase">{prod.brand}</span>
+                          <h4 className="text-[13.5px] font-extrabold text-slate-800 tracking-tight leading-tight mt-1 truncate w-full">
+                            {prod.name}
+                          </h4>
+                          <div className="flex items-center space-x-1 pt-1">
+                            <Rating value={5} readOnly size="sm" />
+                            <span className="text-[10.5px] text-slate-800 font-bold ml-1.5">(0)</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            <span className="text-[9.5px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-[5px]">
+                              {prod.specifications?.ram || 'Standard'}
+                            </span>
+                            <span className="text-[9.5px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-[5px]">
+                              {prod.specifications?.storage || 'Standard'}
+                            </span>
+                          </div>
                         </div>
-                      )}
-                    </div>
-
-                    {/* Content Container */}
-                    <div className="flex flex-col flex-grow justify-between text-left mt-3">
-                      <div className="space-y-1 mb-2">
-                        <span className="text-[10px] font-black text-blue-650 tracking-wider uppercase">{prod.brand}</span>
-                        <h4 className="text-[13.5px] font-extrabold text-slate-800 tracking-tight leading-tight mt-1 truncate w-full">
-                          {prod.name}
-                        </h4>
-                        <div className="flex items-center space-x-1 pt-1">
-                          <Rating value={prod.rating} readOnly size="sm" />
-                          <span className="text-[10.5px] text-slate-800 font-bold ml-1.5">({prod.reviews})</span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          <span className="text-[9.5px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-[5px]">
-                            {prod.ram.includes('RAM') || prod.ram.includes('GB') ? (prod.ram.includes('RAM') ? prod.ram : `${prod.ram} RAM`) : `${prod.ram} RAM`}
-                          </span>
-                          <span className="text-[9.5px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-[5px]">
-                            {prod.storage.includes('SSD') ? prod.storage : `${prod.storage} SSD`}
-                          </span>
+                        <div className="border-t border-slate-100/80 my-3" />
+                        <div className="flex items-center justify-between flex-shrink-0">
+                          <div className="flex flex-col text-left">
+                            <Price value={prod.price} className="text-[14.5px] font-black text-slate-900 leading-none" />
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAddToCart(prod);
+                            }}
+                            className="w-9 h-9 rounded-full bg-blue-50/70 hover:bg-blue-600 text-slate-800 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shadow-sm"
+                          >
+                            <ShoppingCart className="w-4 h-4 stroke-[2.2px]" />
+                          </button>
                         </div>
                       </div>
-
-                      <div className="border-t border-slate-100/80 my-3" />
-
-                      <div className="flex items-center justify-between flex-shrink-0">
-                        <div className="flex flex-col text-left">
-                          <Price value={prod.price} className="text-[14.5px] font-black text-slate-900 leading-none" />
-                          {prod.listPrice && (
-                            <Price value={prod.listPrice} className="text-[10.5px] text-slate-400 line-through font-bold mt-1" />
-                          )}
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleAddToCart(prod);
-                          }}
-                          className="w-9 h-9 rounded-full bg-blue-50/70 hover:bg-blue-600 text-slate-800 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shadow-sm"
-                          aria-label={`Add ${prod.name} to cart`}
-                        >
-                          <ShoppingCart className="w-4 h-4 stroke-[2.2px]" />
-                        </button>
-                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
 
-              {!isLoading && currentItems.length === 0 && (
+              {!isLoading && productsList.length === 0 && (
                 <div className="col-span-full py-16 flex flex-col items-center justify-center text-center">
-                  <p className="text-sm font-semibold text-slate-400">No products found matching your search filters.</p>
+                  <ShoppingBag className="w-12 h-12 text-slate-200 mb-2" />
+                  <p className="text-sm font-semibold text-slate-400">No products found matching filters.</p>
                 </div>
               )}
             </div>
 
-            {/* Pagination Component & Custom Page Size inline selector */}
+            {/* Pagination Controls */}
             <div className="pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 w-full select-none">
-              {/* Pagination info tag */}
               <span className="text-[11px] font-bold text-slate-450">
-                Page {currentPage} of {totalPages} ({filteredProducts.length} items found)
+                Page {currentPage} of {totalPages} ({totalResults} items found)
               </span>
-
-              {/* Standard Pagination button blocks */}
               {totalPages > 1 && (
                 <Pagination
                   currentPage={currentPage}
@@ -1074,14 +1041,15 @@ export const Marketplace: React.FC = () => {
                   onPageChange={setCurrentPage}
                 />
               )}
-
-              {/* Inline Page Size selector list */}
               <div className="flex items-center space-x-2 text-[11px] font-bold text-slate-450">
                 <span>Show:</span>
                 {pageSizeOptions.map((size) => (
                   <button
                     key={size}
-                    onClick={() => setItemsPerPage(size)}
+                    onClick={() => {
+                      setItemsPerPage(size);
+                      setCurrentPage(1);
+                    }}
                     className={cn(
                       "px-2.5 py-1 rounded-[8px] transition-colors cursor-pointer",
                       itemsPerPage === size
@@ -1098,7 +1066,6 @@ export const Marketplace: React.FC = () => {
         </div>
       </div>
 
-      {/* Tablet / Mobile Drawer Filter panel */}
       <Drawer
         isOpen={isFilterDrawerOpen}
         onClose={() => setIsFilterDrawerOpen(false)}
@@ -1121,7 +1088,6 @@ export const Marketplace: React.FC = () => {
             )}
           </div>
           {renderFilters()}
-          
           <Button
             variant="primary"
             size="sm"
@@ -1132,7 +1098,6 @@ export const Marketplace: React.FC = () => {
           </Button>
         </div>
       </Drawer>
-
     </MainLayout>
   );
 };

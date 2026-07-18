@@ -9,5 +9,6 @@ router.put('/profile', authMiddleware, authorize('Customer', 'Admin'), profileUp
 
 router.get('/', authMiddleware, authorize('Admin'), ctrl.getAllUsers);
 router.get('/:userId', authMiddleware, authorize('Admin'), ctrl.getUserById);
+router.put('/:userId', authMiddleware, authorize('Admin'), profileUpdateRules, ctrl.updateUserByIdAdmin);
 
 module.exports = router;

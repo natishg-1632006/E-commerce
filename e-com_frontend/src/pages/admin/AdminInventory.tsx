@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AdminLayout } from '../../layouts/AdminLayout';
 import { InventoryTableSkeleton, DetailPageSkeleton, SafeImage } from '../../components/admin/AdminSkeletons';
 import {
@@ -13,13 +13,13 @@ import {
   ChevronDown,
   Loader2,
   ArrowLeft,
+  Package,
+  TrendingUp,
+  RefreshCw,
 } from 'lucide-react';
+import { inventoryService } from '../../services/inventory.service';
+import { productService } from '../../services/product.service';
 import macbookImg from '../../assets/products/macbook.jpg';
-import rogImg from '../../assets/products/rog.jpg';
-import dellImg from '../../assets/products/dell.jpg';
-import ssdImg from '../../assets/products/samsung_t7_ssd.jpg';
-import sleeveImg from '../../assets/products/laptop_sleeve_leather.jpg';
-import matImg from '../../assets/products/premium_desk_mat.jpg';
 
 interface InventoryItem {
   id: string;
@@ -31,21 +31,45 @@ interface InventoryItem {
   reservedStock: number;
   soldQty: number;
   img: string;
+  brand: string;
+  status: string;
+  lastUpdated: string;
 }
 
-const initialInventory: InventoryItem[] = [
-  { id: 'P001', name: 'MacBook Pro M3 Max', sku: 'APL-MBP-M3-001', category: 'Laptops', currentStock: 150, threshold: 20, reservedStock: 30, soldQty: 580, img: macbookImg },
-  { id: 'P002', name: 'ROG Zephyrus G16', sku: 'ASU-ROG-G16-002', category: 'Gaming', currentStock: 9, threshold: 5, reservedStock: 2, soldQty: 96, img: rogImg },
-  { id: 'P003', name: 'Dell XPS 15 Plus', sku: 'DEL-XPS15-003', category: 'Laptops', currentStock: 0, threshold: 5, reservedStock: 0, soldQty: 84, img: dellImg },
-  { id: 'P004', name: 'Samsung T7 Shield 2TB', sku: 'SAM-T7-2TB-004', category: 'Storage', currentStock: 60, threshold: 10, reservedStock: 6, soldQty: 254, img: ssdImg },
-  { id: 'P005', name: 'Leather Laptop Sleeve 16"', sku: 'NAT-SLVE-005', category: 'Accessories', currentStock: 35, threshold: 10, reservedStock: 3, soldQty: 118, img: sleeveImg },
-  { id: 'P006', name: 'Premium Desk Mat Pro', sku: 'NAT-MAT-006', category: 'Accessories', currentStock: 3, threshold: 10, reservedStock: 1, soldQty: 89, img: matImg },
-];
+const CustomSwitch: React.FC<{
+  checked: boolean;
+  onChange: (val: boolean) => void;
+  label: string;
+  description?: string;
+}> = ({ checked, onChange, label, description }) => {
+  return (
+    <div className="flex items-center justify-between py-2">
+      <div className="flex flex-col text-left">
+        <span className="text-[12px] font-extrabold text-slate-800">{label}</span>
+        {description && <span className="text-[10.5px] text-slate-400 font-semibold">{description}</span>}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-6.5 w-11.5 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-250 ease-in-out focus:outline-none ${
+          checked ? 'bg-blue-600' : 'bg-slate-200'
+        }`}
+      >
+        <span
+          className={`pointer-events-none inline-block h-5.5 w-5.5 transform rounded-full bg-white shadow-md ring-0 transition duration-250 ease-in-out ${
+            checked ? 'translate-x-5' : 'translate-x-0'
+          }`}
+        />
+      </button>
+    </div>
+  );
+};
 
-const InventoryStatusBadge: React.FC<{ currentStock: number; threshold: number }> = ({ currentStock, threshold }) => {
+const InventoryStatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const baseClass = "inline-flex items-center justify-center space-x-1 px-3 py-1 rounded-full text-[10px] font-bold border flex-shrink-0 text-center";
+  const normalized = (status || '').trim().toLowerCase();
   
-  if (currentStock === 0) {
+  if (normalized === 'out of stock' || normalized === 'outofstock') {
     return (
       <span className={`${baseClass} bg-red-50 text-red-500 border-red-100`}>
         <XCircle className="w-3 h-3 flex-shrink-0" />
@@ -53,7 +77,7 @@ const InventoryStatusBadge: React.FC<{ currentStock: number; threshold: number }
       </span>
     );
   }
-  if (currentStock <= threshold) {
+  if (normalized === 'low stock' || normalized === 'lowstock') {
     return (
       <span className={`${baseClass} bg-amber-50 text-amber-650 border-amber-100`}>
         <AlertTriangle className="w-3 h-3 flex-shrink-0" />
@@ -61,8 +85,16 @@ const InventoryStatusBadge: React.FC<{ currentStock: number; threshold: number }
       </span>
     );
   }
+  if (normalized === 'inactive') {
+    return (
+      <span className={`${baseClass} bg-slate-50 text-slate-500 border-slate-100`}>
+        <XCircle className="w-3 h-3 flex-shrink-0" />
+        <span>Inactive</span>
+      </span>
+    );
+  }
   return (
-    <span className={`${baseClass} bg-emerald-50 text-emerald-650 border-emerald-100`}>
+    <span className={`${baseClass} bg-emerald-50 text-emerald-655 border-emerald-100`}>
       <CheckCircle className="w-3 h-3 flex-shrink-0" />
       <span>In Stock</span>
     </span>
@@ -120,8 +152,7 @@ function PremiumDropdown<T>({ label, selected, options, isOpen, setIsOpen, onSel
   );
 }
 
-type SortField = 'name' | 'available' | 'current' | 'reserved' | 'sold';
-type StatusFilterField = 'All' | 'In Stock' | 'Low Stock' | 'Out of Stock';
+type SortField = 'name' | 'available' | 'current' | 'reserved' | 'sold' | 'lastUpdated' | 'status';
 
 const sortOptions = [
   { value: 'name' as SortField, label: 'Product Name' },
@@ -129,7 +160,11 @@ const sortOptions = [
   { value: 'current' as SortField, label: 'Current Stock' },
   { value: 'reserved' as SortField, label: 'Reserved Stock' },
   { value: 'sold' as SortField, label: 'Sold Quantity' },
+  { value: 'lastUpdated' as SortField, label: 'Last Updated' },
+  { value: 'status' as SortField, label: 'Status' },
 ];
+
+type StatusFilterField = 'All' | 'In Stock' | 'Low Stock' | 'Out of Stock';
 
 const statusOptions = [
   { value: 'All' as StatusFilterField, label: 'All Status' },
@@ -139,10 +174,11 @@ const statusOptions = [
 ];
 
 const AdminInventory: React.FC = () => {
-  const [inventoryList, setInventoryList] = useState<InventoryItem[]>(initialInventory);
+  const [inventoryList, setInventoryList] = useState<InventoryItem[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilterField>('All');
   const [sortBy, setSortBy] = useState<SortField>('name');
+  const [viewMode, setViewMode] = useState<'all' | 'low-stock'>('all');
   
   // Custom dropdown open states
   const [isSortOpen, setIsSortOpen] = useState(false);
@@ -152,48 +188,127 @@ const AdminInventory: React.FC = () => {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  React.useEffect(() => {
-    setLoading(true);
-    const timer = setTimeout(() => {
+  const loadInventoryData = async (showRefreshIndicator = false) => {
+    if (showRefreshIndicator) {
+      setIsRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      const [prodRes, invRes] = await Promise.all([
+        productService.getProducts({ limit: 1000 }),
+        viewMode === 'low-stock' 
+          ? inventoryService.getLowStockInventory() 
+          : inventoryService.getAllInventory()
+      ]);
+
+      let products: any[] = [];
+      if (prodRes) {
+        if (Array.isArray(prodRes)) {
+          products = prodRes;
+        } else {
+          products = prodRes.products || prodRes.data || [];
+        }
+      }
+
+      let inventoryItems: any[] = [];
+      if (invRes) {
+        if (Array.isArray(invRes)) {
+          inventoryItems = invRes;
+        } else {
+          inventoryItems = invRes.data || [];
+        }
+      }
+
+      const mappedList: InventoryItem[] = inventoryItems.map((inv: any) => {
+        const product = products.find(p => p.id === inv.productId || p.productId === inv.productId);
+        let imgUrl = '';
+        if (product) {
+          if (product.images && Array.isArray(product.images) && product.images.length > 0) {
+            const img = product.images[0];
+            imgUrl = typeof img === 'string' ? img : (img.imageUrl || img.url || '');
+          } else {
+            imgUrl = product.img || '';
+          }
+        }
+        return {
+          id: inv.productId,
+          name: product ? product.name : `Product ${inv.productId}`,
+          sku: product ? (product.sku || `${product.brand ? product.brand.substring(0,3).toUpperCase() : 'PRD'}-${product.name.substring(0,5).toUpperCase()}-${inv.productId.substring(0,4)}`) : `SKU-${inv.productId.substring(0,4)}`,
+          category: product ? (product.category || product.categoryName || 'Uncategorized') : 'Uncategorized',
+          currentStock: inv.currentStock || 0,
+          threshold: inv.lowStockThreshold || 0,
+          reservedStock: inv.reservedStock || 0,
+          soldQty: inv.soldQuantity || 0,
+          img: imgUrl || macbookImg,
+          brand: product ? product.brand : '',
+          status: inv.status || 'In Stock',
+          lastUpdated: inv.lastUpdated || new Date().toISOString()
+        };
+      });
+
+      setInventoryList(mappedList);
+    } catch (err: any) {
+      console.error('Error loading inventory:', err);
+      triggerToast(err.response?.data?.message || err.message || 'Failed to load inventory.');
+    } finally {
       setLoading(false);
-    }, 450);
-    return () => clearTimeout(timer);
-  }, [editingItem]);
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInventoryData();
+  }, [viewMode]);
 
   const handleSearchChange = (val: string) => {
     setSearch(val);
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 350);
   };
 
   const handleStatusFilterChange = (val: StatusFilterField) => {
     setStatusFilter(val);
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 350);
+    if (val === 'Low Stock' || val === 'Out of Stock') {
+      setViewMode('low-stock');
+    } else {
+      setViewMode('all');
+    }
   };
 
   const handleSortChange = (val: SortField) => {
     setSortBy(val);
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 350);
   };
   
-  // Edit form state
-  const [adjType, setAdjType] = useState<'increase' | 'decrease'>('increase');
-  const [adjQty, setAdjQty] = useState<number>(25);
   const [editThreshold, setEditThreshold] = useState<number>(0);
   const [validationError, setValidationError] = useState<string | null>(null);
   
-  // Loading state simulation
+  // Loading state
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // Stock Adjustment Card Inline states
+  const [adjustmentQty, setAdjustmentQty] = useState<number>(10);
+  const [adjustmentReason, setAdjustmentReason] = useState<string>('Manual Restock');
+  const [isAdjusting, setIsAdjusting] = useState(false);
+  const [activeAdjType, setActiveAdjType] = useState<'increase' | 'decrease' | null>(null);
+
+  // Inventory settings switch & dropdown states
+  const [enableTracking, setEnableTracking] = useState(true);
+  const [allowBackorders, setAllowBackorders] = useState(false);
+  const [selectedWarehouse, setSelectedWarehouse] = useState('Main Warehouse');
+  const [selectedSupplier, setSelectedSupplier] = useState('Apple Inc.');
+
+  // Dirty form initial states tracking
+  const [initialTracking, setInitialTracking] = useState(true);
+  const [initialBackorders, setInitialBackorders] = useState(false);
+  const [initialWarehouse, setInitialWarehouse] = useState('Main Warehouse');
+  const [initialSupplier, setInitialSupplier] = useState('Apple Inc.');
+  const [initialThreshold, setInitialThreshold] = useState(0);
+
+  // Dialog / Warning states
+  const [showNavigationDiscardModal, setShowNavigationDiscardModal] = useState(false);
 
   // Nested Confirmation modal state
   const [pendingConfirm, setPendingConfirm] = useState<{
@@ -206,6 +321,13 @@ const AdminInventory: React.FC = () => {
     newThreshold: number;
   } | null>(null);
 
+  const [pendingAdjustmentConfirm, setPendingAdjustmentConfirm] = useState<{
+    type: 'increase' | 'decrease';
+    quantity: number;
+    currentStock: number;
+    newStock: number;
+  } | null>(null);
+
   // Success message toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -214,16 +336,18 @@ const AdminInventory: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const getStatus = (item: InventoryItem): 'In Stock' | 'Low Stock' | 'Out of Stock' => {
-    if (item.currentStock === 0) return 'Out of Stock';
-    if (item.currentStock <= item.threshold) return 'Low Stock';
-    return 'In Stock';
-  };
-
   // Filter logic
   const filtered = inventoryList.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.category.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'All' || getStatus(p) === statusFilter;
+    const matchesSearch = 
+      p.name.toLowerCase().includes(search.toLowerCase()) || 
+      p.id.toLowerCase().includes(search.toLowerCase()) ||
+      p.category.toLowerCase().includes(search.toLowerCase()) ||
+      (p.brand && p.brand.toLowerCase().includes(search.toLowerCase()));
+      
+    const matchesStatus = 
+      statusFilter === 'All' || 
+      (p.status || '').trim().toLowerCase() === statusFilter.trim().toLowerCase();
+      
     return matchesSearch && matchesStatus;
   });
 
@@ -246,90 +370,221 @@ const AdminInventory: React.FC = () => {
     if (sortBy === 'sold') {
       return b.soldQty - a.soldQty;
     }
+    if (sortBy === 'lastUpdated') {
+      return new Date(b.lastUpdated || 0).getTime() - new Date(a.lastUpdated || 0).getTime();
+    }
+    if (sortBy === 'status') {
+      return (a.status || '').localeCompare(b.status || '');
+    }
     return 0;
   });
 
-  const handleEditClick = (item: InventoryItem) => {
-    setLoading(true);
-    setEditingItem(item);
-    setAdjType('increase');
-    setAdjQty(25);
-    setEditThreshold(item.threshold);
+  const syncInitialStates = (threshold: number) => {
+    setInitialThreshold(threshold);
+    setEditThreshold(threshold);
+    setInitialTracking(true);
+    setInitialBackorders(false);
+    setInitialWarehouse('Main Warehouse');
+    setInitialSupplier('Apple Inc.');
+    setEnableTracking(true);
+    setAllowBackorders(false);
+    setSelectedWarehouse('Main Warehouse');
+    setSelectedSupplier('Apple Inc.');
+  };
+
+  const isDirty = 
+    editThreshold !== initialThreshold ||
+    enableTracking !== initialTracking ||
+    allowBackorders !== initialBackorders ||
+    selectedWarehouse !== initialWarehouse ||
+    selectedSupplier !== initialSupplier;
+
+  const discardUnsavedChanges = () => {
+    setEditThreshold(initialThreshold);
+    setEnableTracking(initialTracking);
+    setAllowBackorders(initialBackorders);
+    setSelectedWarehouse(initialWarehouse);
+    setSelectedSupplier(initialSupplier);
     setValidationError(null);
   };
 
-  // Validate values live
-  const calculateNewStock = (): number => {
-    if (!editingItem) return 0;
-    if (adjType === 'increase') {
-      return editingItem.currentStock + adjQty;
+  const handleBackClick = () => {
+    if (isDirty) {
+      setShowNavigationDiscardModal(true);
     } else {
-      return editingItem.currentStock - adjQty;
+      setEditingItem(null);
     }
   };
 
-  const handleValidationCheck = (): boolean => {
-    if (adjQty <= 0) {
-      setValidationError('Adjustment quantity must be greater than zero.');
-      return false;
+  const triggerAdjustmentConfirm = (type: 'increase' | 'decrease') => {
+    if (!editingItem) return;
+    if (adjustmentQty <= 0) {
+      triggerToast('Adjustment quantity must be greater than zero.');
+      return;
     }
-    if (editThreshold < 0) {
-      setValidationError('Low stock threshold cannot be negative.');
-      return false;
+    if (type === 'decrease' && editingItem.currentStock - adjustmentQty < 0) {
+      triggerToast('❌ Cannot decrease more than current stock.');
+      return;
     }
-    const newStock = calculateNewStock();
-    if (newStock < 0) {
-      setValidationError('❌ Cannot decrease more than current stock.');
-      return false;
+
+    setPendingAdjustmentConfirm({
+      type,
+      quantity: adjustmentQty,
+      currentStock: editingItem.currentStock,
+      newStock: type === 'increase' ? editingItem.currentStock + adjustmentQty : editingItem.currentStock - adjustmentQty
+    });
+  };
+
+  const confirmAdjustmentCall = async () => {
+    if (!pendingAdjustmentConfirm || !editingItem) return;
+    const { type, quantity } = pendingAdjustmentConfirm;
+    
+    setIsAdjusting(true);
+    setActiveAdjType(type);
+    setPendingAdjustmentConfirm(null);
+    try {
+      if (type === 'increase') {
+        await inventoryService.increaseStock(editingItem.id, quantity, adjustmentReason.trim());
+        triggerToast('Inventory updated successfully.');
+      } else {
+        await inventoryService.decreaseStock(editingItem.id, quantity, adjustmentReason.trim());
+        triggerToast('Inventory updated successfully.');
+      }
+      setAdjustmentQty(10);
+      setAdjustmentReason('Manual Restock');
+      await refreshDetails(editingItem.id);
+      await loadInventoryData(true);
+    } catch (err: any) {
+      console.error('Error adjusting stock:', err);
+      let errorMsg = 'Failed to adjust stock.';
+      if (err.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        errorMsg = err.response.data.errors.map((e: any) => e.msg || e.message).join(', ');
+      } else {
+        errorMsg = err.response?.data?.message || err.message || errorMsg;
+      }
+      triggerToast(errorMsg);
+    } finally {
+      setIsAdjusting(false);
+      setActiveAdjType(null);
     }
+  };
+
+  // Refresh details page info from backend
+  const refreshDetails = async (productId: string) => {
+    setDetailsLoading(true);
+    try {
+      const res = await inventoryService.getInventoryByProductId(productId);
+      const inv = res.data || res;
+      if (inv) {
+        setEditingItem(prev => prev ? {
+          ...prev,
+          currentStock: inv.currentStock,
+          threshold: inv.lowStockThreshold,
+          reservedStock: inv.reservedStock,
+          soldQty: inv.soldQuantity,
+          status: inv.status,
+          lastUpdated: inv.lastUpdated
+        } : null);
+        syncInitialStates(inv.lowStockThreshold || 0);
+      }
+    } catch (err: any) {
+      console.error('Error refreshing details:', err);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const handleEditClick = async (item: InventoryItem) => {
+    setEditingItem(item);
+    setDetailsLoading(true);
     setValidationError(null);
-    return true;
+    try {
+      const res = await inventoryService.getInventoryByProductId(item.id);
+      const inv = res.data || res;
+      if (inv) {
+        setEditingItem(prev => prev ? {
+          ...prev,
+          currentStock: inv.currentStock,
+          threshold: inv.lowStockThreshold,
+          reservedStock: inv.reservedStock,
+          soldQty: inv.soldQuantity,
+          status: inv.status,
+          lastUpdated: inv.lastUpdated
+        } : null);
+        syncInitialStates(inv.lowStockThreshold || 0);
+      }
+    } catch (err: any) {
+      console.error('Error fetching inventory details:', err);
+      triggerToast(err.response?.data?.message || err.message || 'Failed to fetch inventory details.');
+    } finally {
+      setDetailsLoading(false);
+    }
   };
 
   const triggerConfirmModal = () => {
     if (!editingItem) return;
-    if (!handleValidationCheck()) return;
+    if (editThreshold < 0) {
+      setValidationError('Low stock threshold cannot be negative.');
+      return;
+    }
+    setValidationError(null);
 
     setPendingConfirm({
       item: editingItem,
       oldStock: editingItem.currentStock,
-      operation: adjType,
-      quantity: adjQty,
-      newStock: calculateNewStock(),
+      operation: 'increase',
+      quantity: 0,
+      newStock: editingItem.currentStock,
       oldThreshold: editingItem.threshold,
       newThreshold: editThreshold,
     });
   };
 
-  const confirmSaveChanges = () => {
+  const confirmSaveChanges = async () => {
     if (!pendingConfirm || !editingItem) return;
 
     setIsUpdating(true);
-    const { newStock, newThreshold } = pendingConfirm;
-
-    // Simulate short network update delay
-    setTimeout(() => {
-      setInventoryList(prev =>
-        prev.map(item =>
-          item.id === editingItem.id
-            ? { ...item, currentStock: newStock, threshold: newThreshold }
-            : item
-        )
-      );
-
-      setIsUpdating(false);
-      triggerToast(`Inventory updated successfully.`);
+    try {
+      await inventoryService.updateInventoryThreshold(editingItem.id, editThreshold);
+      triggerToast('Low stock threshold updated successfully.');
       setPendingConfirm(null);
-      setEditingItem(null); // Return to list view
-    }, 800);
+      
+      // Update clean state values
+      setInitialThreshold(editThreshold);
+      setInitialTracking(enableTracking);
+      setInitialBackorders(allowBackorders);
+      setInitialWarehouse(selectedWarehouse);
+      setInitialSupplier(selectedSupplier);
+
+      await refreshDetails(editingItem.id);
+      await loadInventoryData(true);
+    } catch (err: any) {
+      console.error('Error updating threshold:', err);
+      triggerToast(err.response?.data?.message || err.message || 'Failed to update threshold.');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const outOfStockCount = inventoryList.filter(p => p.currentStock === 0).length;
-  const lowStockCount = inventoryList.filter(p => p.currentStock > 0 && p.currentStock <= p.threshold).length;
-  const totalUnits = inventoryList.reduce((s, p) => s + p.currentStock, 0);
+  const outOfStockCount = inventoryList.filter(p => {
+    const st = (p.status || '').trim().toLowerCase();
+    return st === 'out of stock' || st === 'outofstock';
+  }).length;
 
+  const lowStockCount = inventoryList.filter(p => {
+    const st = (p.status || '').trim().toLowerCase();
+    return st === 'low stock' || st === 'lowstock';
+  }).length;
+
+  const inStockCount = inventoryList.filter(p => {
+    const st = (p.status || '').trim().toLowerCase();
+    return st === 'in stock' || st === 'instock';
+  }).length;
+
+  const totalReserved = inventoryList.reduce((acc, p) => acc + (p.reservedStock || 0), 0);
+  const totalSold = inventoryList.reduce((acc, p) => acc + (p.soldQty || 0), 0);
   // Compute validation state for UI updates
-  const isFormValid = adjQty > 0 && editThreshold >= 0 && (editingItem ? (adjType === 'increase' ? true : (editingItem.currentStock - adjQty >= 0)) : false);
+  const isFormValid = editThreshold >= 0;
 
   // Exact Grid Percentages:
   // Product -> 24%, Available -> 11%, Current -> 11%, Threshold -> 14%, Reserved -> 10%, Sold -> 10%, Status -> 10%, Auto space -> 10%
@@ -374,33 +629,77 @@ const AdminInventory: React.FC = () => {
             )}
 
             {/* Quick statistics highlights block */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-white border border-slate-100 rounded-[16px] p-4 flex items-center justify-between shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer">
-                <div>
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Units in Stock</span>
-                  <div className="text-2xl font-black text-slate-800 mt-0.5 leading-none">{totalUnits.toLocaleString()}</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+              <div 
+                onClick={() => { setStatusFilter('All'); setViewMode('all'); }}
+                className="bg-white border border-slate-100 rounded-[16px] p-4 flex flex-col justify-between shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-200 cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Products</span>
+                  <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+                    <Boxes className="w-3.5 h-3.5" />
+                  </div>
                 </div>
-                <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-                  <Boxes className="w-4.5 h-4.5" />
-                </div>
+                <div className="text-xl font-black text-slate-800 mt-2 leading-none">{inventoryList.length}</div>
               </div>
-              <div className="bg-white border border-slate-100 rounded-[16px] p-4 flex items-center justify-between shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer">
-                <div>
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Low Stock Warnings</span>
-                  <div className="text-2xl font-black text-slate-800 mt-0.5 leading-none">{lowStockCount} Items</div>
+
+              <div 
+                onClick={() => { setStatusFilter('In Stock'); setViewMode('all'); }}
+                className="bg-white border border-slate-100 rounded-[16px] p-4 flex flex-col justify-between shadow-sm hover:shadow-md hover:border-emerald-200 transition-all duration-200 cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">In Stock</span>
+                  <div className="w-7 h-7 rounded-full bg-emerald-50 text-emerald-650 flex items-center justify-center flex-shrink-0">
+                    <CheckCircle className="w-3.5 h-3.5 animate-pulse" />
+                  </div>
                 </div>
-                <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center">
-                  <Clock className="w-4.5 h-4.5" />
-                </div>
+                <div className="text-xl font-black text-slate-800 mt-2 leading-none">{inStockCount}</div>
               </div>
-              <div className="bg-white border border-slate-100 rounded-[16px] p-4 flex items-center justify-between shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer">
-                <div>
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Out of Stock Items</span>
-                  <div className="text-2xl font-black text-slate-800 mt-0.5 leading-none">{outOfStockCount} Items</div>
+
+              <div 
+                onClick={() => { setStatusFilter('Low Stock'); setViewMode('low-stock'); }}
+                className="bg-white border border-slate-100 rounded-[16px] p-4 flex flex-col justify-between shadow-sm hover:shadow-md hover:border-amber-200 transition-all duration-200 cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Low Stock</span>
+                  <div className="w-7 h-7 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0">
+                    <Clock className="w-3.5 h-3.5" />
+                  </div>
                 </div>
-                <div className="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
-                  <AlertTriangle className="w-4.5 h-4.5" />
+                <div className="text-xl font-black text-slate-800 mt-2 leading-none">{lowStockCount}</div>
+              </div>
+
+              <div 
+                onClick={() => { setStatusFilter('Out of Stock'); setViewMode('low-stock'); }}
+                className="bg-white border border-slate-100 rounded-[16px] p-4 flex flex-col justify-between shadow-sm hover:shadow-md hover:border-red-200 transition-all duration-200 cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Out Of Stock</span>
+                  <div className="w-7 h-7 rounded-full bg-red-50 text-red-500 flex items-center justify-center flex-shrink-0">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                  </div>
                 </div>
+                <div className="text-xl font-black text-slate-800 mt-2 leading-none">{outOfStockCount}</div>
+              </div>
+
+              <div className="bg-white border border-slate-100 rounded-[16px] p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition-all duration-200 cursor-default">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Reserved</span>
+                  <div className="w-7 h-7 rounded-full bg-slate-50 text-slate-500 flex items-center justify-center flex-shrink-0">
+                    <Clock className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+                <div className="text-xl font-black text-slate-800 mt-2 leading-none">{totalReserved.toLocaleString()}</div>
+              </div>
+
+              <div className="bg-white border border-slate-100 rounded-[16px] p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition-all duration-200 cursor-default">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Sold</span>
+                  <div className="w-7 h-7 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+                <div className="text-xl font-black text-slate-800 mt-2 leading-none">{totalSold.toLocaleString()}</div>
               </div>
             </div>
 
@@ -512,11 +811,11 @@ const AdminInventory: React.FC = () => {
                         ))}
                       </div>
                     )}
-
                     <div className={`space-y-2 sm:space-y-2.5 transition-opacity duration-205 ${isRefreshing ? 'opacity-30 pointer-events-none' : ''}`}>
                       {sorted.map((p) => {
                         const availableStock = p.currentStock - p.reservedStock;
-                        const isBelowThreshold = p.currentStock <= p.threshold;
+                        const st = (p.status || '').trim().toLowerCase();
+                        const isBelowThreshold = st === 'low stock' || st === 'lowstock' || st === 'out of stock' || st === 'outofstock';
 
                         return (
                           <div
@@ -562,7 +861,7 @@ const AdminInventory: React.FC = () => {
                               <span className="sm:hidden text-slate-400 text-[10px] mr-1.5">Threshold:</span>
                               <div className="flex items-center space-x-1">
                                 <AlertTriangle className={`w-3.5 h-3.5 ${isBelowThreshold ? 'text-red-500 animate-bounce mt-0.5' : 'text-slate-350'} flex-shrink-0`} />
-                                <span className={isBelowThreshold ? 'text-red-650 font-black' : ''}>{p.threshold} Limit</span>
+                                <span className={isBelowThreshold ? 'text-red-655 font-black' : ''}>{p.threshold} Limit</span>
                               </div>
                             </div>
 
@@ -586,7 +885,7 @@ const AdminInventory: React.FC = () => {
 
                             {/* 7. Status badge */}
                             <div className="flex items-center justify-start sm:justify-center w-full sm:w-auto">
-                              <InventoryStatusBadge currentStock={p.currentStock} threshold={p.threshold} />
+                              <InventoryStatusBadge status={p.status} />
                             </div>
 
                             {/* 8. Blank auto track */}
@@ -605,7 +904,8 @@ const AdminInventory: React.FC = () => {
                         </div>
                       )}
                     </div>
-                  </div>  </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -613,10 +913,10 @@ const AdminInventory: React.FC = () => {
           /* ================= WORKSPACE VIEW: FULL INVENTORY DETAILS PAGE ================= */
           <div className="space-y-6 animate-fadeIn pb-10">
             {/* Header & Sticky Actions Bar */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between pb-5 border-b border-slate-100 gap-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between pb-5 border-b border-slate-150 gap-4">
               <div className="space-y-2">
                 <button
-                  onClick={() => setEditingItem(null)}
+                  onClick={handleBackClick}
                   className="flex items-center space-x-2 text-[12px] font-bold text-blue-600 hover:text-blue-750 transition-colors cursor-pointer group"
                 >
                   <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
@@ -625,10 +925,10 @@ const AdminInventory: React.FC = () => {
                 
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                   <div className="flex items-center space-x-3">
-                    <SafeImage src={editingItem.img} alt={editingItem.name} className="w-10 h-10 rounded-xl border border-slate-200" />
-                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">{editingItem.name}</h1>
+                    <SafeImage src={editingItem.img} alt={editingItem.name} className="w-12 h-12 rounded-xl border border-slate-200" />
+                    <h1 className="text-2xl font-black text-slate-900 tracking-tight leading-tight">{editingItem.name}</h1>
                   </div>
-                  <InventoryStatusBadge currentStock={editingItem.currentStock} threshold={editingItem.threshold} />
+                  <InventoryStatusBadge status={editingItem.status} />
                 </div>
                 
                 <div className="flex items-center space-x-4 text-[11px] text-slate-455 font-bold mt-1">
@@ -640,30 +940,60 @@ const AdminInventory: React.FC = () => {
                 </div>
               </div>
 
-              {/* Action Controls Top Right */}
               <div className="flex items-center space-x-3 self-start md:self-auto">
                 <button
-                  onClick={() => setEditingItem(null)}
-                  className="h-9 px-4 rounded-xl border border-slate-250 bg-white hover:bg-slate-50 text-[12px] font-bold text-slate-655 transition-all cursor-pointer"
+                  type="button"
+                  onClick={handleBackClick}
+                  className="h-11 px-5 rounded-xl border border-slate-250 bg-white hover:bg-slate-50 text-[12px] font-bold text-slate-655 transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={triggerConfirmModal}
-                  disabled={!isFormValid}
-                  className={`h-9 px-5 rounded-xl text-[12px] font-bold transition-all shadow-md active:scale-95 flex items-center space-x-1.5 cursor-pointer ${
+                  disabled={!isFormValid || isUpdating}
+                  className={`h-11 px-6 rounded-xl text-[12px] font-extrabold transition-all shadow-md active:scale-95 flex items-center space-x-1.5 cursor-pointer ${
                     isFormValid
                       ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/25'
                       : 'bg-slate-100 text-slate-400 border border-slate-200 shadow-none cursor-not-allowed'
                   }`}
                 >
                   {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                  <span>Update Inventory</span>
+                  <span>Save Changes</span>
                 </button>
               </div>
             </div>
 
-            {loading ? (
+            {/* Sticky Unsaved Changes Alert bar */}
+            {isDirty && (
+              <div className="bg-amber-50 border border-amber-200/50 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md shadow-amber-600/5 animate-slideDown">
+                <div className="flex items-center space-x-2.5 text-amber-800">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 animate-pulse flex-shrink-0" />
+                  <div className="text-left">
+                    <span className="text-[12.5px] font-black">You have unsaved settings changes</span>
+                    <p className="text-[10.5px] font-semibold text-amber-650">Low stock threshold changes have not been written to the database yet.</p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-3 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={discardUnsavedChanges}
+                    className="flex-1 sm:flex-initial h-9 px-4 rounded-xl border border-amber-300 text-amber-800 bg-white hover:bg-amber-50 text-[11.5px] font-bold transition-all cursor-pointer"
+                  >
+                    Discard
+                  </button>
+                  <button
+                    type="button"
+                    onClick={triggerConfirmModal}
+                    className="flex-1 sm:flex-initial h-9 px-4.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[11.5px] font-black shadow-sm active:scale-95 transition-all cursor-pointer"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {detailsLoading ? (
               <DetailPageSkeleton columns={2} />
             ) : (
               <>
@@ -675,189 +1005,340 @@ const AdminInventory: React.FC = () => {
                   </div>
                 )}
 
-            {/* Quick Summary Cards (Matching Order Details Summary style) */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white border border-slate-100 rounded-[16px] p-4 shadow-sm">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Current Stock</span>
-                <div className="text-xl font-black text-slate-800 mt-1 leading-none">{editingItem.currentStock} Units</div>
-              </div>
-              <div className="bg-white border border-slate-100 rounded-[16px] p-4 shadow-sm">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Available Stock</span>
-                <div className="text-xl font-black text-blue-600 mt-1 leading-none">{(editingItem.currentStock - editingItem.reservedStock)} Units</div>
-              </div>
-              <div className="bg-white border border-slate-100 rounded-[16px] p-4 shadow-sm">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Reserved Stock</span>
-                <div className="text-xl font-black text-slate-700 mt-1 leading-none">{editingItem.reservedStock} Units</div>
-              </div>
-              <div className="bg-white border border-slate-100 rounded-[16px] p-4 shadow-sm">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sold Quantity</span>
-                <div className="text-xl font-black text-slate-800 mt-1 leading-none">{editingItem.soldQty} Units</div>
-              </div>
-            </div>
-
-            {/* Main Configuration Details Content Stack */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              
-              {/* Left Content column: Stock adjustment adjustments panels (lg:col-span-8) */}
-              <div className="lg:col-span-8 space-y-6">
-                
-                {/* 1. Stock Adjustment card */}
-                <div className="bg-white border border-slate-150 rounded-2xl p-5 shadow-sm space-y-4">
-                  <div>
-                    <h3 className="text-[14px] font-black text-slate-900">Stock Adjustment</h3>
-                    <p className="text-[11.5px] text-slate-400 font-semibold mt-0.5">
-                      Choose adjustment operation and input target values to modify active inventory stock levels safely.
-                    </p>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Adjustment Segmented choices */}
-                    <div className="space-y-1.5">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Adjustment Type</span>
-                      <div className="flex p-1 bg-slate-100 rounded-xl border border-slate-200/40">
-                        <button
-                          onClick={() => {
-                            setAdjType('increase');
-                            setValidationError(null);
-                          }}
-                          className={`flex-1 py-2 rounded-lg text-[10.5px] font-black flex items-center justify-center space-x-1.5 cursor-pointer transition-all ${
-                            adjType === 'increase'
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'text-slate-500 hover:text-slate-700'
-                          }`}
-                        >
-                          <span>+ Increase Stock</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setAdjType('decrease');
-                            setValidationError(null);
-                          }}
-                          className={`flex-1 py-2 rounded-lg text-[10.5px] font-black flex items-center justify-center space-x-1.5 cursor-pointer transition-all ${
-                            adjType === 'decrease'
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'text-slate-500 hover:text-slate-700'
-                          }`}
-                        >
-                          <span>− Decrease Stock</span>
-                        </button>
-                      </div>
+                {/* Section 2: Inventory Summary Cards */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white border border-slate-100 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
+                    <div>
+                      <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">Current Stock</span>
+                      <div className="text-2xl font-black text-slate-800 mt-1 leading-none">{editingItem.currentStock} Units</div>
                     </div>
-
-                    {/* Quantity field */}
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Adjustment Quantity</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={adjQty}
-                        placeholder="Enter quantity"
-                        onChange={e => {
-                          setAdjQty(parseInt(e.target.value) || 0);
-                          setValidationError(null);
-                        }}
-                        className="w-full h-10 px-3 bg-white hover:bg-slate-50/60 border border-slate-200 hover:border-slate-350 focus:bg-slate-50/80 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 focus:outline-none rounded-xl text-[12.5px] font-bold text-slate-700 transition-all duration-200"
-                      />
+                    <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+                      <Boxes className="w-5 h-5" />
                     </div>
                   </div>
 
-                  {/* Live Preview Card */}
-                  <div className="p-4 bg-blue-50/20 border border-blue-100 rounded-xl space-y-2.5">
-                    <span className="text-[9.5px] font-black text-blue-600 uppercase tracking-wider block">Live Preview Card</span>
-                    <div className="grid grid-cols-3 gap-3 text-center text-[11.5px] font-bold text-slate-655 font-semibold">
-                      <div>
-                        <span className="text-slate-400 block text-[9.5px] uppercase">Current Stock</span>
-                        <span className="text-slate-800 text-[13px] mt-0.5 block">{editingItem.currentStock} Units</span>
+                  <div className="bg-white border border-slate-100 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
+                    <div>
+                      <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">Available Stock</span>
+                      <div className="text-2xl font-black text-blue-650 mt-1 leading-none">{(editingItem.currentStock - editingItem.reservedStock)} Units</div>
+                    </div>
+                    <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-650 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-slate-100 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
+                    <div>
+                      <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">Reserved Stock</span>
+                      <div className="text-2xl font-black text-slate-700 mt-1 leading-none">{editingItem.reservedStock} Units</div>
+                    </div>
+                    <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0">
+                      <Clock className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-slate-100 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
+                    <div>
+                      <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">Sold Quantity</span>
+                      <div className="text-2xl font-black text-slate-800 mt-1 leading-none">{editingItem.soldQty} Units</div>
+                    </div>
+                    <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
+                      <ShoppingBag className="w-5 h-5" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Two Column Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Left Column: Stock Management & Inventory Settings (lg:col-span-8) */}
+                  <div className="lg:col-span-8 space-y-6">
+                    {/* Grid of current stock and threshold cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Current Stock Card */}
+                      <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3.5 text-left">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2 text-slate-400">
+                            <Package className="w-4 h-4" />
+                            <span className="text-[10px] font-black uppercase tracking-wider">Current Stock</span>
+                          </div>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-slate-100 text-slate-450 border border-slate-200/50">
+                            Read Only
+                          </span>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-black text-slate-900 leading-none">{editingItem.currentStock} Units</div>
+                          <div className="mt-2.5 flex items-center justify-start">
+                            <InventoryStatusBadge status={editingItem.status} />
+                          </div>
+                        </div>
                       </div>
+
+                      {/* Low Stock Threshold Card */}
+                      <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-3.5 text-left">
+                        <div className="flex items-center space-x-2 text-slate-400">
+                          <AlertTriangle className="w-4 h-4" />
+                          <span className="text-[10px] font-black uppercase tracking-wider">Low Stock Threshold</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="relative w-28 shrink-0">
+                            <input
+                              type="number"
+                              min={0}
+                              value={editThreshold}
+                              onChange={e => {
+                                setEditThreshold(parseInt(e.target.value) || 0);
+                                setValidationError(null);
+                              }}
+                              className={`w-full h-10 px-3 bg-white border ${
+                                validationError ? 'border-red-500 ring-4 ring-red-500/10' : 'border-slate-200 hover:border-slate-350 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10'
+                              } focus:outline-none rounded-xl text-[13px] font-black text-slate-700 transition-all`}
+                            />
+                          </div>
+                          <span className="text-[11px] font-extrabold text-slate-800">Units</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-semibold leading-normal">
+                          When stock reaches this value, the product will be marked as Low Stock.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Stock Adjustment Card */}
+                    <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-6 text-left">
                       <div>
-                        <span className="text-slate-455 block text-[9.5px] uppercase">Adjustment</span>
-                        <span className={`text-[13px] font-black ${adjType === 'increase' ? 'text-emerald-500' : 'text-amber-500'} mt-0.5 block`}>
-                          {adjType === 'increase' ? '+' : '−'}{adjQty}
+                        <h3 className="text-base font-black text-slate-900 tracking-tight">Stock Adjustment</h3>
+                        <p className="text-[12px] text-slate-400 font-semibold mt-0.5">
+                          Configure low-stock alert thresholds, supplier channels, and warehouse properties.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        {/* Quantity Selector: [-] 10 Units [+] */}
+                        <div className="flex flex-col space-y-2">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider pl-1">Adjustment Quantity</span>
+                          
+                          <div className="flex items-center bg-white border border-slate-200 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-600/10 rounded-xl h-12 shadow-sm overflow-hidden w-full sm:w-[220px]">
+                            {/* Minus Button */}
+                            <button
+                              type="button"
+                              disabled={adjustmentQty <= 1}
+                              onClick={() => setAdjustmentQty(Math.max(1, adjustmentQty - 1))}
+                              className="w-12 h-full flex items-center justify-center border-r border-slate-200 hover:bg-slate-50 text-slate-600 font-extrabold active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer select-none"
+                            >
+                              −
+                            </button>
+                            
+                            {/* Centered Quantity Value & Units */}
+                            <div className="flex-1 flex items-center justify-center space-x-1 px-2 h-full">
+                              <input
+                                type="number"
+                                min={1}
+                                value={adjustmentQty || ''}
+                                onChange={e => setAdjustmentQty(Math.max(1, parseInt(e.target.value) || 0))}
+                                className="w-12 text-center bg-transparent border-none text-[15px] font-black text-slate-800 focus:outline-none focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                              <span className="text-[11px] font-extrabold text-slate-400 select-none">Units</span>
+                            </div>
+
+                            {/* Plus Button */}
+                            <button
+                              type="button"
+                              onClick={() => setAdjustmentQty(adjustmentQty + 1)}
+                              className="w-12 h-full flex items-center justify-center border-l border-slate-200 hover:bg-slate-50 text-slate-600 font-extrabold active:scale-95 transition-all cursor-pointer select-none"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Adjustment Reason */}
+                        <div className="flex flex-col space-y-2">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider pl-1">Adjustment Reason</span>
+                          <input
+                            type="text"
+                            value={adjustmentReason}
+                            onChange={e => setAdjustmentReason(e.target.value)}
+                            placeholder="e.g. Manual Restock, Correction"
+                            className="w-full h-12 px-4 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 focus:outline-none rounded-xl text-[12.5px] font-bold text-slate-700 transition-all duration-200"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Action Buttons: Primary (Increase Stock - Green) / Secondary (Decrease Stock - Orange/Red) */}
+                      <div className="flex flex-col sm:flex-row gap-4 pt-2">
+                        <button
+                          type="button"
+                          disabled={isAdjusting || adjustmentQty <= 0}
+                          onClick={() => triggerAdjustmentConfirm('increase')}
+                          className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[12.5px] font-extrabold shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+                        >
+                          {isAdjusting && activeAdjType === 'increase' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                          <span>Increase Stock</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isAdjusting || adjustmentQty <= 0 || editingItem.currentStock - adjustmentQty < 0}
+                          onClick={() => triggerAdjustmentConfirm('decrease')}
+                          className="flex-1 h-11 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-[12.5px] font-extrabold shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+                        >
+                          {isAdjusting && activeAdjType === 'decrease' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                          <span>Decrease Stock</span>
+                        </button>
+                      </div>
+
+                      {/* Inline negative stock error validation messages */}
+                      {editingItem.currentStock - adjustmentQty < 0 && (
+                        <span className="text-[11px] font-bold text-red-500 pl-1 block">
+                          Stock cannot become negative.
                         </span>
+                      )}
+
+                      {/* Compact New Stock Preview Card */}
+                      <div className="p-4 bg-slate-50/50 border border-slate-100 rounded-xl space-y-2 text-left">
+                        <div className="flex items-center space-x-1.5 text-slate-400">
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          <span className="text-[9.5px] font-black uppercase tracking-wider">Adjustment Preview</span>
+                        </div>
+                        
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-[11.5px] font-bold text-slate-600">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400">Current Stock:</span>
+                            <span className="text-slate-800 font-extrabold">{editingItem.currentStock}</span>
+                          </div>
+                          
+                          <span className="hidden sm:inline text-slate-350">|</span>
+                          
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400">If Increased:</span>
+                            <span className="text-slate-850">{editingItem.currentStock}</span>
+                            <span className="text-emerald-600">+{adjustmentQty}</span>
+                            <span className="text-slate-350">→</span>
+                            <span className="text-blue-600 font-black">{editingItem.currentStock + adjustmentQty} Units</span>
+                          </div>
+
+                          <span className="hidden sm:inline text-slate-350">|</span>
+                          
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400">If Decreased:</span>
+                            <span className="text-slate-855">{editingItem.currentStock}</span>
+                            <span className="text-orange-600">-{adjustmentQty}</span>
+                            <span className="text-slate-355">→</span>
+                            <span className="text-blue-600 font-black">
+                              {Math.max(0, editingItem.currentStock - adjustmentQty)} Units
+                            </span>
+                          </div>
+                        </div>
                       </div>
+                    </div>
+
+                    {/* Section 4: Inventory Settings */}
+                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-5 text-left">
                       <div>
-                        <span className="text-blue-600 block text-[9.5px] uppercase">New Stock</span>
-                        <span className="text-blue-600 font-black text-[14px] mt-0.5 block">{calculateNewStock()} Units</span>
+                        <h3 className="text-[14px] font-black text-slate-900">Inventory Settings</h3>
+                        <p className="text-[11.5px] text-slate-400 font-semibold mt-0.5">
+                          Configure low-stock alert thresholds, supplier channels, and warehouse properties.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider pl-1 block">Warehouse Location</span>
+                          <select
+                            value={selectedWarehouse}
+                            onChange={e => setSelectedWarehouse(e.target.value)}
+                            className="w-full h-12 px-3.5 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:border-blue-600 focus:outline-none rounded-2xl text-[12.5px] font-bold text-slate-700 transition-all cursor-pointer"
+                          >
+                            <option value="Main Warehouse">Main Warehouse (Floor A)</option>
+                            <option value="North Facility">North Facility (Bay 4)</option>
+                            <option value="East Coast Depot">East Coast Depot (Depot 12)</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider pl-1 block">Supplier</span>
+                          <select
+                            value={selectedSupplier}
+                            onChange={e => setSelectedSupplier(e.target.value)}
+                            className="w-full h-12 px-3.5 bg-slate-50 border border-slate-200 hover:border-slate-350 focus:bg-white focus:border-blue-600 focus:outline-none rounded-2xl text-[12.5px] font-bold text-slate-700 transition-all cursor-pointer"
+                          >
+                            <option value="Apple Inc.">Apple Inc. (Direct)</option>
+                            <option value="Samsung Logistics">Samsung Logistics</option>
+                            <option value="Generic Wholesale Co.">Generic Wholesale Co.</option>
+                          </select>
+                        </div>
+
+                        <div className="flex flex-col justify-center bg-slate-50/50 border border-slate-100 rounded-2xl px-4 py-2">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Computed Inventory Status</span>
+                          <div className="mt-1 flex items-center justify-start">
+                            <InventoryStatusBadge status={editingItem.status} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-100 pt-3 space-y-2">
+                        <CustomSwitch
+                          checked={enableTracking}
+                          onChange={setEnableTracking}
+                          label="Enable Inventory Tracking"
+                          description="Monitor stock levels in real time and warn when low stock is reached"
+                        />
+                        <div className="border-b border-slate-50 my-1" />
+                        <CustomSwitch
+                          checked={allowBackorders}
+                          onChange={setAllowBackorders}
+                          label="Allow Backorders"
+                          description="Customers can purchase this item even if stock levels drop below zero"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Sidebar summaries (lg:col-span-4) */}
+                  <div className="lg:col-span-4 space-y-6">
+                    {/* Real-time Summary Card */}
+                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-4 text-left">
+                      <h3 className="text-[14px] font-black text-slate-900">Inventory Properties</h3>
+                      <div className="border-t border-slate-50 pt-2.5 space-y-3.5 text-[11.5px] text-slate-655 font-semibold">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Current Status</span>
+                          <span className="text-slate-800 font-bold capitalize">{editingItem.status}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Warehouse Location</span>
+                          <span className="text-slate-800 font-bold">{selectedWarehouse}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Current Stock</span>
+                          <span className="text-slate-800 font-bold">{editingItem.currentStock} Units</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Available Stock</span>
+                          <span className="text-blue-600 font-bold">{editingItem.currentStock - editingItem.reservedStock} Units</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Reserved Quantity</span>
+                          <span className="text-slate-800 font-bold">{editingItem.reservedStock} Units</span>
+                        </div>
+                        <div className="flex justify-between border-t border-slate-100 pt-2 text-[10px]">
+                          <span className="text-slate-400">Last Synchronized</span>
+                          <span className="text-slate-500">{new Date(editingItem.lastUpdated || '').toLocaleString()}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-
-                {/* 2. Low Stock Settings Card */}
-                <div className="bg-white border border-slate-150 rounded-2xl p-5 shadow-sm space-y-4">
-                  <div>
-                    <h3 className="text-[14px] font-black text-slate-900">Inventory Settings</h3>
-                    <p className="text-[11.5px] text-slate-400 font-semibold mt-0.5">
-                      Configure stock alert levels. Warning alerts trigger automatically inside the catalog and admin dashboard reports.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1.5 pt-1">
-                    <label className="text-[10px] font-black text-slate-455 uppercase tracking-wider block">Low Stock Threshold</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={editThreshold}
-                      onChange={e => {
-                        setEditThreshold(parseInt(e.target.value) || 0);
-                        setValidationError(null);
-                      }}
-                      className="w-full h-10 px-3 bg-white hover:bg-slate-50/60 border border-slate-200 hover:border-slate-350 focus:bg-slate-50/80 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 focus:outline-none rounded-xl text-[12.5px] font-bold text-slate-700 transition-all duration-200"
-                    />
-                    <p className="text-[9.5px] text-slate-400 font-semibold leading-relaxed">
-                      The product will be marked as Low Stock when available stock falls below this value.
-                    </p>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Right Column details: Real-Time Summary & Save confirmation logs (lg:col-span-4) */}
-              <div className="lg:col-span-4 space-y-6">
-                
-                {/* Inventory Summary block */}
-                <div className="bg-white border border-slate-150 rounded-2xl p-5 shadow-sm space-y-4">
-                  <h3 className="text-[14px] font-black text-slate-900">Inventory Summary</h3>
-                  <div className="border-t border-slate-50 pt-2.5 space-y-3.5 text-[11.5px] text-slate-650 font-semibold">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Current Stock</span>
-                      <span className="text-slate-800 font-bold">{editingItem.currentStock} Units</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Operation</span>
-                      <span className="text-slate-850 font-bold capitalize">{adjType}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Adjustment</span>
-                      <span className={`font-bold ${adjType === 'increase' ? 'text-emerald-500' : 'text-amber-500'}`}>
-                        {adjType === 'increase' ? '+' : '−'}{adjQty} Units
-                      </span>
-                    </div>
-                    <div className="flex justify-between border-t border-slate-100 pt-2 text-[12px]">
-                      <span className="text-slate-900 font-bold">New Stock</span>
-                      <span className="text-blue-600 font-black">{calculateNewStock()} Units</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Threshold Trigger</span>
-                      <span className="text-slate-800 font-bold">{editThreshold} Units</span>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          </>
+              </>
+            )}
+          </div>
         )}
-      </div>
-    )}
 
         {/* Nested Confirmation Dialog modal */}
         {pendingConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fadeIn">
-            <div className="bg-white border border-slate-100 rounded-2xl p-5 w-full max-w-sm shadow-xl space-y-4">
+            <div className="bg-white border border-slate-100 rounded-2xl p-5 w-full max-w-sm shadow-xl space-y-4 text-left">
               <div className="flex items-center space-x-2.5 text-amber-500">
                 <AlertTriangle className="w-5.5 h-5.5 animate-pulse" />
-                <h3 className="text-[14px] font-black text-slate-900 leading-tight">Update Inventory?</h3>
+                <h3 className="text-[14px] font-black text-slate-900 leading-tight">Update Threshold?</h3>
               </div>
               
               <div className="p-3 bg-slate-50 rounded-xl space-y-2 text-[11.5px] text-slate-655 font-semibold">
@@ -866,40 +1347,121 @@ const AdminInventory: React.FC = () => {
                   <span className="font-extrabold text-slate-800">{pendingConfirm.item.name}</span>
                 </div>
                 <div className="flex justify-between border-t border-slate-200/55 pt-1.5">
-                  <span className="text-slate-400">Operation:</span>
-                  <span className="text-slate-800 font-bold capitalize">{pendingConfirm.operation} Stock</span>
+                  <span className="text-slate-400">Current Threshold:</span>
+                  <span className="text-slate-850 font-bold">{pendingConfirm.oldThreshold} Units</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Quantity:</span>
-                  <span className="text-slate-850 font-extrabold">{pendingConfirm.quantity} Units</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Current Stock:</span>
-                  <span className="text-slate-800 font-bold">{pendingConfirm.oldStock}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">New Stock:</span>
-                  <span className="text-blue-650 font-black">{pendingConfirm.newStock}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Low Stock Threshold:</span>
-                  <span className="text-slate-855 font-extrabold">{pendingConfirm.newThreshold}</span>
+                  <span className="text-slate-400">New Threshold:</span>
+                  <span className="text-blue-650 font-black">{pendingConfirm.newThreshold} Units</span>
                 </div>
               </div>
 
               <div className="flex items-center space-x-3 justify-end pt-1">
                 <button
+                  type="button"
+                  disabled={isUpdating}
                   onClick={() => setPendingConfirm(null)}
                   className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-[12px] font-bold text-slate-655 rounded-xl transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
+                  disabled={isUpdating}
                   onClick={confirmSaveChanges}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-bold rounded-xl transition-all shadow-md shadow-blue-600/25 active:scale-95 flex items-center space-x-1.5 cursor-pointer"
                 >
                   {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                   <span>Confirm Update</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Navigation Discard Confirm Modal */}
+        {showNavigationDiscardModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fadeIn">
+            <div className="bg-white border border-slate-100 rounded-2xl p-5 w-full max-w-sm shadow-xl space-y-4 text-left">
+              <div className="flex items-center space-x-2.5 text-amber-500">
+                <AlertTriangle className="w-5.5 h-5.5 animate-pulse" />
+                <h3 className="text-[14px] font-black text-slate-900 leading-tight">Discard Unsaved Changes?</h3>
+              </div>
+              
+              <p className="text-[11.5px] text-slate-500 font-semibold leading-relaxed">
+                You have unsaved inventory configuration changes. Discarding will revert all settings.
+              </p>
+
+              <div className="flex items-center space-x-3 justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowNavigationDiscardModal(false)}
+                  className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-[12px] font-bold text-slate-655 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNavigationDiscardModal(false);
+                    discardUnsavedChanges();
+                    setEditingItem(null);
+                  }}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-bold rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
+                >
+                  Discard Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Adjustment Confirmation Dialog Modal */}
+        {pendingAdjustmentConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fadeIn">
+            <div className="bg-white border border-slate-100 rounded-2xl p-5 w-full max-w-sm shadow-xl space-y-4 text-left">
+              <div className="flex items-center space-x-2.5 text-blue-600">
+                <RefreshCw className="w-5 h-5 text-blue-650 animate-spin" style={{ animationDuration: '3s' }} />
+                <h3 className="text-[14px] font-black text-slate-900 leading-tight">
+                  {pendingAdjustmentConfirm.type === 'increase' ? 'Increase Stock?' : 'Decrease Stock?'}
+                </h3>
+              </div>
+              
+              <div className="p-3 bg-slate-50 rounded-xl space-y-2 text-[11.5px] text-slate-655 font-semibold">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Action:</span>
+                  <span className="text-slate-800 font-extrabold uppercase text-[10px]">
+                    {pendingAdjustmentConfirm.type} Stock
+                  </span>
+                </div>
+                <div className="flex justify-between border-t border-slate-200/55 pt-1.5">
+                  <span className="text-slate-400">Quantity to Adjust:</span>
+                  <span className="text-blue-650 font-black">{pendingAdjustmentConfirm.quantity} Units</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Current Stock:</span>
+                  <span className="text-slate-850 font-bold">{pendingAdjustmentConfirm.currentStock} Units</span>
+                </div>
+                <div className="flex justify-between border-t border-slate-200/55 pt-1.5">
+                  <span className="text-slate-400">New Stock Level:</span>
+                  <span className="text-emerald-650 font-black text-[12.5px]">{pendingAdjustmentConfirm.newStock} Units</span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-3 justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPendingAdjustmentConfirm(null)}
+                  className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-[12px] font-bold text-slate-655 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmAdjustmentCall}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-bold rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
+                >
+                  Confirm
                 </button>
               </div>
             </div>

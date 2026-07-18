@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
-import type { RootState } from '../store';
-import { clearCart } from '../store/cartSlice';
+import type { RootState, AppDispatch } from '../store';
+import { clearCartBackend } from '../store/cartSlice';
 import { MainLayout } from '../layouts/MainLayout';
 import { Button } from '../components/ui/Button';
 import { Price } from '../components/ui/Price';
@@ -29,7 +29,7 @@ import sleeveImg from '../assets/products/laptop_sleeve_leather.jpg';
 import matImg from '../assets/products/premium_desk_mat.jpg';
 
 export const Checkout: React.FC = () => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const { items, discountAmount } = useSelector((state: RootState) => state.cart);
   const { profile } = useSelector((state: RootState) => state.auth);
@@ -306,7 +306,7 @@ export const Checkout: React.FC = () => {
   };
 
   const handleFinish = () => {
-    dispatch(clearCart());
+    dispatch(clearCartBackend());
     navigate('/');
   };
 

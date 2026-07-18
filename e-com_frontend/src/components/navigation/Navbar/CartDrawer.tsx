@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import type { RootState } from '../../../store';
-import { removeFromCart, updateQuantity } from '../../../store/cartSlice';
+import type { RootState, AppDispatch } from '../../../store';
+import {
+  updateQuantityBackend,
+  removeItemBackend,
+} from '../../../store/cartSlice';
 import { Drawer } from '../../ui/Drawer';
 import { Button } from '../../ui/Button';
 import { Price } from '../../ui/Price';
@@ -15,23 +18,50 @@ interface CartDrawerProps {
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const { items, discountAmount } = useSelector((state: RootState) => state.cart);
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  const handleQuantityChange = (id: string, currentQty: number, change: number, ram?: string, storage?: string) => {
+  const handleQuantityChange = async (id: string, currentQty: number, change: number, stock?: number) => {
+    if (isUpdating) return;
     const newQty = currentQty + change;
     if (newQty < 1) {
-      dispatch(removeFromCart({ id, ram, storage }));
-      toast.success('Product removed from cart');
-    } else {
-      dispatch(updateQuantity({ id, ram, storage, quantity: newQty }));
+      handleRemove(id);
+      return;
+    }
+
+    const maxStock = stock !== undefined ? stock : 10;
+    if (newQty > maxStock) {
+      toast.error(`Cannot exceed available stock of ${maxStock} units.`);
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      await dispatch(updateQuantityBackend({ productId: id, quantity: newQty })).unwrap();
+      toast.success('Quantity updated');
+    } catch (err: any) {
+      toast.error(err || 'Failed to update quantity.');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
-  const handleRemove = (id: string, ram?: string, storage?: string) => {
-    dispatch(removeFromCart({ id, ram, storage }));
-    toast.success('Product removed from cart');
+  const handleRemove = async (id: string) => {
+    if (isUpdating) return;
+    const ok = window.confirm('Are you sure you want to remove this item?');
+    if (!ok) return;
+
+    setIsUpdating(true);
+    try {
+      await dispatch(removeItemBackend(id)).unwrap();
+      toast.success('Product removed from cart');
+    } catch (err: any) {
+      toast.error(err || 'Failed to remove product.');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   // Calculations (INR synced with Cart.tsx)
@@ -74,7 +104,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
                   {/* Quantity adjusts */}
                   <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200/50 rounded-lg px-1 py-0.5">
                     <button
-                      onClick={() => handleQuantityChange(item.id, item.quantity, -1, item.ram, item.storage)}
+                      onClick={() => handleQuantityChange(item.id, item.quantity, -1, item.stock)}
                       className="w-4.5 h-4.5 flex items-center justify-center text-slate-550 hover:text-slate-900 active:scale-75 transition-all cursor-pointer font-bold"
                     >
                       <Minus className="w-2.5 h-2.5 stroke-[2px]" />
@@ -83,7 +113,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
                       {item.quantity}
                     </span>
                     <button
-                      onClick={() => handleQuantityChange(item.id, item.quantity, 1, item.ram, item.storage)}
+                      onClick={() => handleQuantityChange(item.id, item.quantity, 1, item.stock)}
                       className="w-4.5 h-4.5 flex items-center justify-center text-slate-550 hover:text-slate-900 active:scale-75 transition-all cursor-pointer font-bold"
                     >
                       <Plus className="w-2.5 h-2.5 stroke-[2px]" />
@@ -94,7 +124,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
 
               {/* Remove button */}
               <button
-                onClick={() => handleRemove(item.id, item.ram, item.storage)}
+                onClick={() => handleRemove(item.id)}
                 className="absolute top-2.5 right-2.5 text-slate-400 hover:text-slate-655 cursor-pointer transition-colors p-0.5"
                 aria-label="Remove item"
               >

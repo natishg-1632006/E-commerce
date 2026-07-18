@@ -18,6 +18,7 @@ const profileUpdateRules = [
   body('address.city').optional({ nullable: true }).trim().notEmpty().withMessage('address.city cannot be empty').isString().withMessage('address.city must be a string'),
   body('address.state').optional({ nullable: true }).trim().notEmpty().withMessage('address.state cannot be empty').isString().withMessage('address.state must be a string'),
   body('address.pincode').optional({ nullable: true }).trim().notEmpty().withMessage('address.pincode cannot be empty').isString().withMessage('address.pincode must be a string'),
+  body('status').optional({ nullable: true }).trim().isIn(['Active', 'Inactive', 'Blocked', 'Suspended']).withMessage('status must be Active, Inactive, Blocked, or Suspended'),
   handleValidation,
 ];
 

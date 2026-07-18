@@ -6,8 +6,9 @@ import { UserMenu } from '../UserMenu';
 import { MobileMenu } from '../MobileMenu';
 import { Link } from 'react-router-dom';
 import { useClickOutside } from '../../../hooks/useClickOutside';
-import { useSelector } from 'react-redux';
-import type { RootState } from '../../../store';
+import { useSelector, useDispatch } from 'react-redux';
+import type { RootState, AppDispatch } from '../../../store';
+import { fetchCart } from '../../../store/cartSlice';
 import guideImg from '../../../assets/products/guide.jpg';
 
 export interface NavbarProps {
@@ -19,16 +20,24 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleSidebar,
   showSidebarToggle = false,
 }) => {
+  const dispatch = useDispatch<AppDispatch>();
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMegamenuOpen, setIsMegamenuOpen] = useState(false);
   const megamenuRef = useRef<HTMLDivElement | null>(null);
 
   const { items } = useSelector((state: RootState) => state.cart);
+  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
 
   const [shouldPop, setShouldPop] = useState(false);
   const prevItemsCount = useRef(totalItems);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      dispatch(fetchCart());
+    }
+  }, [isAuthenticated, dispatch]);
 
   useEffect(() => {
     if (totalItems > prevItemsCount.current) {

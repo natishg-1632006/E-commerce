@@ -82,6 +82,11 @@ class ProductService {
     return response.data;
   }
 
+  async getProductsByIds(productIds: string[]) {
+    const response = await productApi.post('/api/v1/products/batch', { productIds });
+    return response.data;
+  }
+
   async createProduct(data: ProductPayload) {
     const response = await productApi.post('/api/v1/products', data);
     return response.data;

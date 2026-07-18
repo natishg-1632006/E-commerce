@@ -70,6 +70,7 @@ const updateProfile = async (userId, data) => {
     phone: data.phone !== undefined ? data.phone : existing.phone,
     profileImage: data.profileImage !== undefined ? data.profileImage : existing.profileImage,
     address: data.address !== undefined ? data.address : existing.address,
+    status: data.status !== undefined ? data.status : existing.status,
     updatedAt: new Date().toISOString(),
   };
 
@@ -77,13 +78,14 @@ const updateProfile = async (userId, data) => {
     new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { userId },
-      UpdateExpression: 'SET fullName = :fullName, phone = :phone, profileImage = :profileImage, #address = :address, updatedAt = :updatedAt',
-      ExpressionAttributeNames: { '#address': 'address' },
+      UpdateExpression: 'SET fullName = :fullName, phone = :phone, profileImage = :profileImage, #address = :address, #status = :status, updatedAt = :updatedAt',
+      ExpressionAttributeNames: { '#address': 'address', '#status': 'status' },
       ExpressionAttributeValues: {
         ':fullName': updateFields.fullName,
         ':phone': updateFields.phone,
         ':profileImage': updateFields.profileImage,
         ':address': updateFields.address,
+        ':status': updateFields.status !== undefined ? updateFields.status : 'Active',
         ':updatedAt': updateFields.updatedAt,
       },
       ReturnValues: 'ALL_NEW',
