@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
 import type { RootState } from '../store';
@@ -32,9 +32,20 @@ export const Checkout: React.FC = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { items, discountAmount } = useSelector((state: RootState) => state.cart);
+  const { profile } = useSelector((state: RootState) => state.auth);
 
   // Stepper state: 2 = Checkout (Shipping/Delivery), 3 = Payment, 4 = Confirmation
   const [activeStep, setActiveStep] = useState(2);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Trigger simulated loading skeleton state on stepper changes
+  useEffect(() => {
+    setIsLoading(true);
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [activeStep]);
 
   // Shipping form fields
   const [fullName, setFullName] = useState('');
@@ -46,11 +57,37 @@ export const Checkout: React.FC = () => {
   const [stateName, setStateName] = useState('');
   const [pincode, setPincode] = useState('');
 
+  // Pre-populate shipping address fields from profile/local storage default address
+  React.useEffect(() => {
+    if (profile) {
+      if (profile.fullName) setFullName(profile.fullName);
+      if (profile.email) setEmailAddress(profile.email);
+      if (profile.phone) setMobileNumber(profile.phone);
+    }
+
+    const savedAddr = localStorage.getItem('natcart_addresses');
+    if (savedAddr) {
+      try {
+        const addrList = JSON.parse(savedAddr);
+        const defaultAddr = addrList.find((a: any) => a.isDefault) || addrList[0];
+        if (defaultAddr) {
+          if (defaultAddr.fullName) setFullName(defaultAddr.fullName);
+          if (defaultAddr.addressLine1) setAddressLine1(defaultAddr.addressLine1);
+          if (defaultAddr.addressLine2) setAddressLine2(defaultAddr.addressLine2);
+          if (defaultAddr.city) setCity(defaultAddr.city);
+          if (defaultAddr.stateName) setStateName(defaultAddr.stateName);
+          if (defaultAddr.pincode) setPincode(defaultAddr.pincode);
+          if (defaultAddr.phone) setMobileNumber(defaultAddr.phone);
+        }
+      } catch (e) {
+        // Fallback
+      }
+    }
+  }, [profile]);
+
   // Form errors
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
-
-
 
   // Payment Method: 'card' | 'upi' | 'netbank' | 'cod'
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'upi' | 'netbank' | 'cod'>('card');
@@ -65,11 +102,87 @@ export const Checkout: React.FC = () => {
   const [orderId, setOrderId] = useState('');
 
   // Redirect if cart is empty and we aren't in confirmation screen
-  React.useEffect(() => {
+  useEffect(() => {
     if (items.length === 0 && activeStep !== 4) {
       navigate('/cart');
     }
   }, [items, activeStep, navigate]);
+
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <div className="w-full flex flex-col items-stretch space-y-8 select-none text-left animate-pulse">
+          {/* Breadcrumbs skeleton */}
+          <div className="flex items-center space-x-2 text-[10.5px] font-bold text-slate-455">
+            <div className="h-3.5 w-10 bg-slate-200 rounded" />
+            <div className="h-3.5 w-3 bg-slate-300/50" />
+            <div className="h-3.5 w-16 bg-slate-200 rounded" />
+          </div>
+
+          {/* Stepper visual skeleton */}
+          <div className="max-w-md mx-auto w-full flex items-center justify-between pb-4">
+            <div className="w-9 h-9 rounded-full bg-slate-300" />
+            <div className="h-1 flex-grow bg-slate-200 mx-2" />
+            <div className="w-9 h-9 rounded-full bg-slate-300" />
+            <div className="h-1 flex-grow bg-slate-200 mx-2" />
+            <div className="w-9 h-9 rounded-full bg-slate-200" />
+          </div>
+
+          {/* Main Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Left side form placeholder */}
+            <div className="lg:col-span-8 space-y-6 bg-white border border-slate-200/50 rounded-3xl p-6 shadow-sm shimmer-sweep">
+              <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
+                <div className="h-5 w-40 bg-slate-300 rounded" />
+                <div className="w-6 h-6 rounded-full bg-slate-200" />
+              </div>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="h-12 bg-slate-100 rounded-xl" />
+                  <div className="h-12 bg-slate-100 rounded-xl" />
+                </div>
+                <div className="h-12 bg-slate-100 rounded-xl" />
+                <div className="h-12 bg-slate-100 rounded-xl" />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="h-12 bg-slate-100 rounded-xl" />
+                  <div className="h-12 bg-slate-100 rounded-xl" />
+                  <div className="h-12 bg-slate-100 rounded-xl" />
+                </div>
+              </div>
+            </div>
+
+            {/* Right side Summary aside */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className="bg-white border border-slate-200/60 rounded-[32px] p-6 space-y-5 shadow-sm shimmer-sweep">
+                <div className="h-5 w-32 bg-slate-300 rounded" />
+                <div className="border-b border-slate-100" />
+                
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <div className="h-3.5 w-16 bg-slate-200 rounded" />
+                    <div className="h-3.5 w-20 bg-slate-300 rounded" />
+                  </div>
+                  <div className="flex justify-between">
+                    <div className="h-3.5 w-16 bg-slate-200 rounded" />
+                    <div className="h-3.5 w-16 bg-slate-300 rounded" />
+                  </div>
+                </div>
+
+                <div className="border-b border-slate-100" />
+                <div className="flex justify-between">
+                  <div className="h-4.5 w-16 bg-slate-300 rounded" />
+                  <div className="h-4.5 w-24 bg-slate-300 rounded" />
+                </div>
+
+                <div className="h-12 w-full bg-slate-300 rounded-full" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
+
 
   // Enrich items with specs and images
   const enrichCartItem = (item: any) => {

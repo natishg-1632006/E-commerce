@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { MainLayout } from '../layouts/MainLayout';
 import { Card } from '../components/ui/Card';
 import { Checkbox } from '../components/ui/Checkbox';
@@ -10,7 +10,7 @@ import { Price } from '../components/ui/Price';
 import { Search } from '../components/ui/Search';
 import { Pagination } from '../components/ui/Pagination';
 import { Drawer } from '../components/ui/Drawer';
-import { ShoppingCart, SlidersHorizontal, ArrowUpDown, ChevronDown, Check } from 'lucide-react';
+import { ShoppingCart, SlidersHorizontal, ArrowUpDown, ChevronDown, Check, Laptop, Headphones, Watch, Sparkles, Star, Truck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { cn } from '../lib/cn';
@@ -21,6 +21,7 @@ import macbookImg from '../assets/products/macbook.jpg';
 import rogImg from '../assets/products/rog.jpg';
 import dellImg from '../assets/products/dell.jpg';
 import guideImg from '../assets/products/guide.jpg';
+import heroBannerImg from '../assets/future_tech_banner.jpg';
 
 interface Product {
   id: string;
@@ -37,9 +38,83 @@ interface Product {
   storage: '512GB' | '1TB' | '2TB';
 }
 
+const SkeletonProductCard: React.FC = () => {
+  return (
+    <div className="p-3.5 rounded-[28px] border border-slate-200/50 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.02)] flex flex-col justify-between items-stretch overflow-hidden shimmer-sweep select-none">
+      {/* Thumbnail image placeholder */}
+      <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-200 overflow-hidden flex-shrink-0" />
+
+      {/* Content Container */}
+      <div className="flex flex-col flex-grow justify-between text-left mt-4">
+        <div className="space-y-2 mb-2">
+          {/* Brand */}
+          <div className="h-3 w-12 bg-slate-300 rounded" />
+          {/* Name */}
+          <div className="h-4 w-3/4 bg-slate-300 rounded mt-1.5" />
+          {/* Rating */}
+          <div className="flex items-center space-x-1.5 pt-1">
+            <div className="h-3.5 w-16 bg-slate-200 rounded" />
+            <div className="h-3.5 w-6 bg-slate-200 rounded" />
+          </div>
+          {/* Specs */}
+          <div className="flex space-x-1.5 pt-1">
+            <div className="h-4.5 w-10 bg-slate-200 rounded-[5px]" />
+            <div className="h-4.5 w-10 bg-slate-200 rounded-[5px]" />
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100/80 my-3" />
+
+        {/* Pricing & Cart Button */}
+        <div className="flex items-center justify-between flex-shrink-0">
+          <div className="flex flex-col space-y-1">
+            <div className="h-4 w-16 bg-slate-300 rounded" />
+            <div className="h-3 w-10 bg-slate-200 overflow-hidden" />
+          </div>
+          <div className="w-9 h-9 rounded-full bg-slate-300" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const Marketplace: React.FC = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Reset shop grid view and filters when route location changes (e.g. clicking Home link/Logo)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const brand = params.get('brand');
+    const search = params.get('search');
+
+    if (brand || search) {
+      if (brand) {
+        setSelectedBrands([brand]);
+      } else {
+        setSelectedBrands([]);
+      }
+      if (search) {
+        setSearchQuery(search);
+      } else {
+        setSearchQuery('');
+      }
+      setSelectedRam([]);
+      setSelectedStorage([]);
+      setMinPrice(0);
+      setMaxPrice(400000);
+      setShowShopGrid(true);
+    } else {
+      setShowShopGrid(false);
+      setSelectedBrands([]);
+      setSelectedRam([]);
+      setSelectedStorage([]);
+      setMinPrice(0);
+      setMaxPrice(400000);
+      setSearchQuery('');
+    }
+  }, [location]);
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [selectedRam, setSelectedRam] = useState<string[]>([]);
   const [selectedStorage, setSelectedStorage] = useState<string[]>([]);
@@ -47,10 +122,20 @@ export const Marketplace: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(8);
-  
+  const [showShopGrid, setShowShopGrid] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   // Price filter states
   const [minPrice, setMinPrice] = useState<number>(0);
   const [maxPrice, setMaxPrice] = useState<number>(400000);
+
+  // Trigger simulated loading skeleton state on filter/sorting modifications
+  useEffect(() => {
+    setIsLoading(true);
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [selectedBrands, selectedRam, selectedStorage, minPrice, maxPrice, sortBy, searchQuery, currentPage]);
 
   // Responsive Drawer state
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
@@ -440,6 +525,372 @@ export const Marketplace: React.FC = () => {
     </div>
   );
 
+  const renderHomeLanding = !showShopGrid && !hasActiveFilters;
+
+  // Scroll to top when transitioning between landing page and shop grid catalog view
+  useEffect(() => {
+    try {
+      window.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: 'auto'
+      });
+      document.body.scrollTop = 0;
+      if (document.documentElement) {
+        document.documentElement.scrollTop = 0;
+      }
+    } catch (e) {
+      window.scrollTo(0, 0);
+    }
+  }, [renderHomeLanding]);
+
+  if (renderHomeLanding) {
+    return (
+      <MainLayout>
+        <div className="w-full flex flex-col items-stretch space-y-12 select-none">
+          
+          {/* Hero Banner Section (Screenshot 3 & 4) */}
+          <section className="bg-slate-50/50 rounded-[32px] border border-slate-200/50 p-6 sm:p-10 lg:p-12 flex flex-col lg:flex-row items-center justify-between gap-8 text-left">
+            <div className="flex-1 space-y-6">
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 leading-tight tracking-tight max-w-lg">
+                Discover the <span className="text-blue-600 italic">Future</span> of Technology
+              </h1>
+              
+              {/* Dynamic Description based on Mobile/Desktop */}
+              <p className="text-xs sm:text-sm text-slate-500 font-semibold leading-relaxed max-w-md hidden sm:block">
+                Explore premium gadgets, laptops, gaming gear, and smart devices powered by innovation. Curated by experts, delivered by intelligence.
+              </p>
+              <p className="text-xs text-slate-500 font-semibold leading-relaxed max-w-sm block sm:hidden">
+                Curated AI-driven recommendations for enthusiasts and professionals alike.
+              </p>
+
+              <div className="flex items-center space-x-3.5 pt-2">
+                <button
+                  onClick={() => setShowShopGrid(true)}
+                  className="h-11 px-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-wider shadow hover:shadow-lg active:scale-95 transition-all cursor-pointer border-none"
+                >
+                  View Products
+                </button>
+                <button
+                  onClick={() => setShowShopGrid(true)}
+                  className="h-11 px-6 rounded-full border border-slate-200 bg-white text-slate-800 text-xs font-black uppercase tracking-wider hover:bg-slate-50 transition-all cursor-pointer active:scale-95 shadow-sm"
+                >
+                  View Brands
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 w-full max-w-xl lg:max-w-none">
+              <img
+                src={heroBannerImg}
+                alt="Discover the Future of Technology"
+                className="w-full aspect-[16/9] object-cover rounded-3xl border border-slate-200 shadow-sm"
+              />
+            </div>
+          </section>
+
+          {/* Shop by Category / Shop Categories (Screenshot 1 & 4) */}
+          <section className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="text-left">
+                <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                  <span className="hidden sm:inline">Shop by Category</span>
+                  <span className="inline sm:hidden">Shop Categories</span>
+                </h2>
+                <p className="text-xs text-slate-400 font-bold mt-0.5 hidden sm:block">
+                  Find exactly what you're looking for in our specialized collections.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowShopGrid(true)}
+                className="text-xs font-black text-blue-600 hover:text-blue-800 flex items-center space-x-1 cursor-pointer bg-transparent border-none"
+              >
+                <span>View all</span>
+                <span>&rarr;</span>
+              </button>
+            </div>
+
+            {/* Categories circle grid */}
+            <div className="grid grid-cols-3 gap-3.5 sm:gap-6">
+              {[
+                { label: 'Computing', icon: Laptop, brandFilter: 'Apple' },
+                { label: 'Audio', icon: Headphones, brandFilter: 'ASUS' },
+                { label: 'Wearables', icon: Watch, brandFilter: 'Dell' }
+              ].map((cat) => {
+                const IconComponent = cat.icon;
+                return (
+                  <button
+                    key={cat.label}
+                    onClick={() => {
+                      setSelectedBrands([cat.brandFilter]);
+                      setShowShopGrid(true);
+                    }}
+                    className="p-4 sm:p-6 bg-white border border-slate-200/60 rounded-[24px] sm:rounded-[32px] flex flex-col items-center justify-center space-y-3 hover:border-blue-300 hover:shadow-md transition-all active:scale-98 cursor-pointer select-none"
+                  >
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-700 flex-shrink-0">
+                      <IconComponent className="w-5.5 h-5.5 sm:w-7 sm:h-7 text-slate-800" />
+                    </div>
+                    <span className="text-[11px] sm:text-xs font-black text-slate-800 tracking-tight">{cat.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Gray Brand Names logos list (Screenshot 1) */}
+          <section className="py-2 border-t border-b border-slate-100 flex flex-wrap items-center justify-around gap-y-4 gap-x-6 text-[10px] sm:text-[11px] font-black text-slate-350 tracking-[0.2em] uppercase select-none">
+            <span>Techcore</span>
+            <span>Quantum</span>
+            <span>Nexus</span>
+            <span>Aether</span>
+            <span>Zenith</span>
+            <span>Omega</span>
+          </section>
+
+          {/* Trending Today (Screenshot 1) */}
+          <section className="space-y-5 text-left">
+            <h2 className="text-lg font-black text-slate-900 tracking-tight">Trending Today</h2>
+            
+            {/* Mobile View: Row Cards (Screenshot 1 replica) */}
+            <div className="grid grid-cols-1 gap-3.5 block sm:hidden">
+              {isLoading ? (
+                Array.from({ length: 2 }).map((_, idx) => (
+                  <div
+                    key={`skeleton-mobile-${idx}`}
+                    className="bg-white border border-slate-200/60 rounded-3xl p-3.5 flex items-center justify-between shadow-sm shimmer-sweep text-left"
+                  >
+                    <div className="flex items-center space-x-3.5 min-w-0">
+                      <div className="w-18 h-18 bg-slate-100 rounded-2xl flex-shrink-0" />
+                      <div className="space-y-1 text-left">
+                        <div className="h-3 w-10 bg-slate-200/60 rounded" />
+                        <div className="h-4 w-28 bg-slate-200/60 rounded mt-1.5" />
+                        <div className="h-3.5 w-16 bg-slate-100 rounded mt-1.5" />
+                      </div>
+                    </div>
+                    <div className="w-9 h-9 rounded-full bg-slate-200/60 flex-shrink-0" />
+                  </div>
+                ))
+              ) : (
+                [
+                  {
+                    id: '2',
+                    name: 'SonicPro Wireless X2',
+                    category: 'ACOUSTICS',
+                    price: 24900,
+                    listPrice: 29900,
+                    image: rogImg,
+                  },
+                  {
+                    id: '3',
+                    name: 'Vanguard Health Smartwatch Pro',
+                    category: 'WEARABLES',
+                    price: 38900,
+                    image: guideImg,
+                  }
+                ].map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => navigate(`/product/${item.id}`)}
+                    className="bg-white border border-slate-200/60 rounded-3xl p-3.5 flex items-center justify-between shadow-sm hover:shadow transition-all cursor-pointer"
+                  >
+                    <div className="flex items-center space-x-3.5 min-w-0">
+                      <div className="w-18 h-18 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center p-1.5 flex-shrink-0">
+                        <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
+                      </div>
+                      <div className="min-w-0 text-left">
+                        <span className="text-[9px] font-black text-blue-650 tracking-wider uppercase">{item.category}</span>
+                        <h4 className="text-[11.5px] font-extrabold text-slate-855 truncate mt-0.5">{item.name}</h4>
+                        <div className="flex items-baseline space-x-2 mt-1">
+                          <Price value={item.price} className="text-xs font-black text-blue-600" />
+                          {item.listPrice && (
+                            <Price value={item.listPrice} className="text-[10px] text-slate-455 line-through font-bold" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        dispatch(
+                          addToCart({
+                            id: item.id,
+                            name: item.name,
+                            brand: item.category,
+                            price: item.price,
+                            image: item.image,
+                            ram: 'Standard',
+                            storage: 'Standard'
+                          })
+                        );
+                      }}
+                      className="w-9 h-9 rounded-full bg-blue-50/70 hover:bg-blue-600 text-slate-800 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shadow-sm flex-shrink-0"
+                    >
+                      <ShoppingCart className="w-4 h-4 stroke-[2.2px]" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Desktop View: Standard Product Cards (5-in-a-row) */}
+            <div className="hidden sm:grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 lg:gap-5">
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, idx) => (
+                  <SkeletonProductCard key={`skeleton-trending-${idx}`} />
+                ))
+              ) : (
+                products.slice(0, 5).map((prod) => (
+                  <div
+                    key={prod.id}
+                    onClick={() => navigate(`/product/${prod.id}`)}
+                    className="group relative bg-white border border-slate-200/60 rounded-[30px] p-4 flex flex-col justify-between hover:shadow-[0_24px_50px_rgba(15,23,42,0.04)] hover:-translate-y-1 transition-all duration-350 select-none text-left cursor-pointer"
+                  >
+                    <div className="relative aspect-[4/3] w-full rounded-[22px] overflow-hidden bg-slate-50 flex items-center justify-center mb-4">
+                      <img
+                        src={prod.image}
+                        alt={prod.name}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
+                      />
+                      {prod.saleBadge && (
+                        <div className="absolute top-3 left-3 bg-white border border-red-500/80 text-red-550 font-black text-[9.5px] tracking-wide uppercase px-2.5 py-0.5 rounded-full shadow-sm">
+                          {prod.saleBadge}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col flex-grow justify-between text-left">
+                      <div className="space-y-1">
+                        <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-widest leading-none block">{prod.brand}</span>
+                        <h3 className="text-[13.5px] font-black text-slate-905 tracking-tight leading-snug mt-1 group-hover:text-blue-600 transition-colors line-clamp-2 min-h-[36px]">
+                          {prod.name}
+                        </h3>
+                        <div className="flex items-center space-x-1 mt-1.5 flex-wrap gap-y-1">
+                          <span className="px-2 py-0.5 rounded bg-slate-50 text-[9px] font-bold text-slate-455 border border-slate-100/80">
+                            {prod.ram}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-slate-50 text-[9px] font-bold text-slate-455 border border-slate-100/80">
+                            {prod.storage}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-100/80 my-3" />
+
+                      <div className="flex items-center justify-between flex-shrink-0">
+                        <div className="flex flex-col text-left">
+                          <Price value={prod.price} className="text-[14.5px] font-black text-slate-900 leading-none" />
+                          {prod.listPrice && (
+                            <Price value={prod.listPrice} className="text-[10.5px] text-slate-400 line-through font-bold mt-1" />
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            dispatch(
+                              addToCart({
+                                id: prod.id,
+                                name: prod.name,
+                                brand: prod.brand,
+                                price: prod.price,
+                                image: prod.image,
+                                ram: prod.ram,
+                                storage: prod.storage
+                              })
+                            );
+                          }}
+                          className="w-9 h-9 rounded-full bg-blue-50/70 hover:bg-blue-600 text-slate-800 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shadow-sm"
+                        >
+                          <ShoppingCart className="w-4 h-4 stroke-[2.2px]" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          {/* The NatCart Edge (Screenshot 2) */}
+          <section className="bg-slate-50/20 rounded-[32px] border border-slate-100 p-6 sm:p-10 text-center space-y-8">
+            <h2 className="text-xl font-black text-slate-900 tracking-tight">The NatCart Edge</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
+              {[
+                {
+                  title: 'AI-Powered Insights',
+                  desc: 'Personalized tech recommendations tailored to your unique workflow.',
+                  icon: Sparkles
+                },
+                {
+                  title: 'Certified Authenticity',
+                  desc: 'Every product is verified and covered by our premium global warranty.',
+                  icon: Check
+                },
+                {
+                  title: 'Rapid Delivery',
+                  desc: 'Free worldwide shipping on all orders over $150 with real-time tracking.',
+                  icon: Truck
+                }
+              ].map((feat, idx) => {
+                const IconComponent = feat.icon;
+                return (
+                  <div key={idx} className="bg-white border border-slate-200/60 rounded-3xl p-5 flex items-start space-x-4 shadow-sm">
+                    <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+                      <IconComponent className="w-5 h-5 stroke-[2.2px]" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-black text-slate-900 tracking-tight uppercase">{feat.title}</h4>
+                      <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">{feat.desc}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Trusted by Creators (Screenshot 2) */}
+          <section className="bg-blue-50/30 rounded-[32px] border border-blue-100/50 p-6 sm:p-10 flex flex-col items-center justify-center text-center space-y-6">
+            <h2 className="text-xl font-black text-slate-900 tracking-tight">Trusted by Creators</h2>
+            
+            <div className="max-w-xl bg-white border border-slate-200/50 rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col items-center space-y-4">
+              {/* Star review icons */}
+              <div className="flex items-center space-x-1">
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} className="w-4 h-4 fill-blue-600 text-blue-600" />
+                ))}
+              </div>
+
+              {/* Quote text */}
+              <p className="text-xs sm:text-sm text-slate-650 font-bold italic leading-relaxed">
+                "The AI curation on NatCart is genuinely impressive. It found exactly the workstation components I needed without me having to dig through hundreds of pages."
+              </p>
+
+              {/* Creator info */}
+              <div className="flex items-center space-x-3 mt-2 select-none">
+                <div className="w-10 h-10 rounded-full bg-slate-100 overflow-hidden flex items-center justify-center border border-slate-200">
+                  <span className="text-[10px] font-black text-slate-500 uppercase">SJ</span>
+                </div>
+                <div className="text-left space-y-0.5">
+                  <div className="text-xs font-black text-slate-800">Sarah Jenkins</div>
+                  <div className="text-[9.5px] text-slate-455 font-bold">Lead Designer, TechFlow</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Slider dots indicators */}
+            <div className="flex items-center space-x-2 pt-2 select-none">
+              <span className="w-6 h-1 rounded-full bg-blue-600" />
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-350" />
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-350" />
+            </div>
+          </section>
+
+        </div>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout>
       <div className="w-full flex flex-col items-stretch space-y-8 select-none">
@@ -529,73 +980,79 @@ export const Marketplace: React.FC = () => {
             </div>
 
             {/* Redesigned 4-in-a-Row Product Grid */}
-            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-5">
-              {currentItems.map((prod) => (
-                <div
-                  key={prod.id}
-                  onClick={() => navigate(`/product/${prod.id}`)}
-                  className="p-3.5 rounded-[28px] border border-slate-200/50 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.02)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.06)] hover:-translate-y-1 transition-all duration-350 flex flex-col justify-between items-stretch overflow-hidden group cursor-pointer"
-                >
-                  {/* Thumbnail image */}
-                  <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-50/30 overflow-hidden flex items-center justify-center flex-shrink-0">
-                    <img
-                      src={prod.image}
-                      alt={prod.name}
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
-                    />
-                    {prod.saleBadge && (
-                      <div className="absolute top-3 left-3 bg-white border border-red-500/80 text-red-550 font-black text-[9.5px] tracking-wide uppercase px-2.5 py-0.5 rounded-full shadow-sm">
-                        {prod.saleBadge}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Content Container */}
-                  <div className="flex flex-col flex-grow justify-between text-left mt-3">
-                    <div className="space-y-1 mb-2">
-                      <span className="text-[10px] font-black text-blue-650 tracking-wider uppercase">{prod.brand}</span>
-                      <h4 className="text-[13.5px] font-extrabold text-slate-800 tracking-tight leading-tight mt-1 truncate w-full">
-                        {prod.name}
-                      </h4>
-                      <div className="flex items-center space-x-1 pt-1">
-                        <Rating value={prod.rating} readOnly size="sm" />
-                        <span className="text-[10.5px] text-slate-800 font-bold ml-1.5">({prod.reviews})</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        <span className="text-[9.5px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-[5px]">
-                          {prod.ram.includes('RAM') || prod.ram.includes('GB') ? (prod.ram.includes('RAM') ? prod.ram : `${prod.ram} RAM`) : `${prod.ram} RAM`}
-                        </span>
-                        <span className="text-[9.5px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-[5px]">
-                          {prod.storage.includes('SSD') ? prod.storage : `${prod.storage} SSD`}
-                        </span>
-                      </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-5">
+              {isLoading ? (
+                Array.from({ length: itemsPerPage }).map((_, idx) => (
+                  <SkeletonProductCard key={`skeleton-catalog-${idx}`} />
+                ))
+              ) : (
+                currentItems.map((prod) => (
+                  <div
+                    key={prod.id}
+                    onClick={() => navigate(`/product/${prod.id}`)}
+                    className="p-3.5 rounded-[28px] border border-slate-200/50 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.02)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.06)] hover:-translate-y-1 transition-all duration-350 flex flex-col justify-between items-stretch overflow-hidden group cursor-pointer"
+                  >
+                    {/* Thumbnail image */}
+                    <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-50/30 overflow-hidden flex items-center justify-center flex-shrink-0">
+                      <img
+                        src={prod.image}
+                        alt={prod.name}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
+                      />
+                      {prod.saleBadge && (
+                        <div className="absolute top-3 left-3 bg-white border border-red-500/80 text-red-550 font-black text-[9.5px] tracking-wide uppercase px-2.5 py-0.5 rounded-full shadow-sm">
+                          {prod.saleBadge}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="border-t border-slate-100/80 my-3" />
-
-                    <div className="flex items-center justify-between flex-shrink-0">
-                      <div className="flex flex-col text-left">
-                        <Price value={prod.price} className="text-[14.5px] font-black text-slate-900 leading-none" />
-                        {prod.listPrice && (
-                          <Price value={prod.listPrice} className="text-[10.5px] text-slate-400 line-through font-bold mt-1" />
-                        )}
+                    {/* Content Container */}
+                    <div className="flex flex-col flex-grow justify-between text-left mt-3">
+                      <div className="space-y-1 mb-2">
+                        <span className="text-[10px] font-black text-blue-650 tracking-wider uppercase">{prod.brand}</span>
+                        <h4 className="text-[13.5px] font-extrabold text-slate-800 tracking-tight leading-tight mt-1 truncate w-full">
+                          {prod.name}
+                        </h4>
+                        <div className="flex items-center space-x-1 pt-1">
+                          <Rating value={prod.rating} readOnly size="sm" />
+                          <span className="text-[10.5px] text-slate-800 font-bold ml-1.5">({prod.reviews})</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          <span className="text-[9.5px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-[5px]">
+                            {prod.ram.includes('RAM') || prod.ram.includes('GB') ? (prod.ram.includes('RAM') ? prod.ram : `${prod.ram} RAM`) : `${prod.ram} RAM`}
+                          </span>
+                          <span className="text-[9.5px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-[5px]">
+                            {prod.storage.includes('SSD') ? prod.storage : `${prod.storage} SSD`}
+                          </span>
+                        </div>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleAddToCart(prod);
-                        }}
-                        className="w-9 h-9 rounded-full bg-blue-50/70 hover:bg-blue-600 text-slate-800 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shadow-sm"
-                        aria-label={`Add ${prod.name} to cart`}
-                      >
-                        <ShoppingCart className="w-4 h-4 stroke-[2.2px]" />
-                      </button>
+
+                      <div className="border-t border-slate-100/80 my-3" />
+
+                      <div className="flex items-center justify-between flex-shrink-0">
+                        <div className="flex flex-col text-left">
+                          <Price value={prod.price} className="text-[14.5px] font-black text-slate-900 leading-none" />
+                          {prod.listPrice && (
+                            <Price value={prod.listPrice} className="text-[10.5px] text-slate-400 line-through font-bold mt-1" />
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAddToCart(prod);
+                          }}
+                          className="w-9 h-9 rounded-full bg-blue-50/70 hover:bg-blue-600 text-slate-800 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shadow-sm"
+                          aria-label={`Add ${prod.name} to cart`}
+                        >
+                          <ShoppingCart className="w-4 h-4 stroke-[2.2px]" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
 
-              {currentItems.length === 0 && (
+              {!isLoading && currentItems.length === 0 && (
                 <div className="col-span-full py-16 flex flex-col items-center justify-center text-center">
                   <p className="text-sm font-semibold text-slate-400">No products found matching your search filters.</p>
                 </div>

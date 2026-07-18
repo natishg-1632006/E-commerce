@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
 import type { RootState } from '../store';
@@ -45,6 +45,16 @@ export const Cart: React.FC = () => {
   const navigate = useNavigate();
   const { items, discountCode, discountAmount } = useSelector((state: RootState) => state.cart);
   const [couponInput, setCouponInput] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Trigger simulated loading skeleton state on mount
+  useEffect(() => {
+    setIsLoading(true);
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Handle Qty adjust
   const handleQuantityChange = (id: string, currentQty: number, change: number, ram?: string, storage?: string) => {
@@ -79,6 +89,109 @@ export const Cart: React.FC = () => {
       });
     }
   };
+
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <div className="w-full flex flex-col items-stretch space-y-6 select-none text-left animate-pulse">
+          {/* Breadcrumb skeleton */}
+          <div className="flex items-center space-x-2">
+            <div className="h-3 w-10 bg-slate-200 rounded" />
+            <div className="h-3.5 w-3 bg-slate-300/50" />
+            <div className="h-3 w-16 bg-slate-200 rounded" />
+          </div>
+
+          {/* Title Header */}
+          <div className="border-b border-slate-100 pb-3">
+            <div className="h-7 w-48 bg-slate-300 rounded" />
+            <div className="h-3 w-64 bg-slate-200 rounded mt-2" />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Left Column - Cart Items */}
+            <div className="lg:col-span-8 space-y-6">
+              <div className="space-y-4">
+                {/* 2 row items skeletons */}
+                {Array.from({ length: 2 }).map((_, idx) => (
+                  <div key={idx} className="bg-white border border-slate-200/60 rounded-3xl p-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 shimmer-sweep">
+                    <div className="flex items-center space-x-4">
+                      {/* Image */}
+                      <div className="w-16 h-16 bg-slate-200 rounded-2xl flex-shrink-0" />
+                      {/* Details */}
+                      <div className="space-y-2 text-left">
+                        <div className="h-3.5 w-12 bg-slate-300 rounded" />
+                        <div className="h-4.5 w-48 bg-slate-300 rounded" />
+                        <div className="h-3 w-32 bg-slate-200 rounded" />
+                      </div>
+                    </div>
+                    {/* Qty & Price */}
+                    <div className="flex items-center justify-end space-x-8">
+                      <div className="h-8 w-24 bg-slate-200 rounded-lg" />
+                      <div className="h-5 w-20 bg-slate-300 rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* FBT Accessories label */}
+              <div className="space-y-4 pt-4">
+                <div className="h-5 w-48 bg-slate-300 rounded" />
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {Array.from({ length: 3 }).map((_, idx) => (
+                    <div key={idx} className="p-3.5 rounded-[28px] border border-slate-200/50 bg-white shadow-sm flex flex-col justify-between items-stretch shimmer-sweep">
+                      <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-200 overflow-hidden flex-shrink-0" />
+                      <div className="space-y-2 mt-4 text-left">
+                        <div className="h-3 w-12 bg-slate-300 rounded" />
+                        <div className="h-4 w-28 bg-slate-300 rounded mt-1.5" />
+                        <div className="border-t border-slate-100/80 my-3" />
+                        <div className="flex items-center justify-between">
+                          <div className="h-4 w-16 bg-slate-300 rounded" />
+                          <div className="w-8 h-8 rounded-full bg-slate-200" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column - Order Summary */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className="bg-white border border-slate-200/60 rounded-[32px] p-6 space-y-5 shadow-sm shimmer-sweep">
+                <div className="h-5 w-28 bg-slate-300 rounded" />
+                <div className="border-b border-slate-100" />
+                
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <div className="h-3.5 w-16 bg-slate-200 rounded" />
+                    <div className="h-3.5 w-20 bg-slate-300 rounded" />
+                  </div>
+                  <div className="flex justify-between">
+                    <div className="h-3.5 w-16 bg-slate-200 rounded" />
+                    <div className="h-3.5 w-12 bg-slate-300 rounded" />
+                  </div>
+                  <div className="flex justify-between">
+                    <div className="h-3.5 w-16 bg-slate-200 rounded" />
+                    <div className="h-3.5 w-16 bg-slate-300 rounded" />
+                  </div>
+                </div>
+
+                <div className="border-b border-slate-100" />
+                
+                <div className="flex justify-between">
+                  <div className="h-4.5 w-16 bg-slate-300 rounded" />
+                  <div className="h-4.5 w-24 bg-slate-300 rounded" />
+                </div>
+
+                <div className="h-10 w-full bg-slate-200 rounded-xl" />
+                <div className="h-12 w-full bg-slate-300 rounded-full" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   const handleRemoveCoupon = () => {
     dispatch(removeCoupon());

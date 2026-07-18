@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { addToCart } from '../store/cartSlice';
@@ -39,16 +39,23 @@ export const ProductDetail: React.FC = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  // Selected product options
-  const [selectedColor, setSelectedColor] = useState('Space Black');
-  const [selectedMemory, setSelectedMemory] = useState('32GB');
-  const [selectedStorage, setSelectedStorage] = useState('1TB');
-
-
-
-
   // Fallback to product '1' details if not matched
   const isMacbook = id === '1' || !id;
+
+  // Selected product options
+  const selectedMemory = isMacbook ? '32GB' : '16GB';
+  const selectedStorage = isMacbook ? '1TB' : '512GB';
+
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Trigger simulated loading skeleton state on ID transitions
+  useEffect(() => {
+    setIsLoading(true);
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [id]);
 
   // Set page data based on Macbook or other products
   const productData = isMacbook
@@ -176,6 +183,64 @@ export const ProductDetail: React.FC = () => {
 
 
 
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <div className="w-full flex flex-col items-stretch space-y-6 select-none text-left shimmer-sweep">
+          {/* Breadcrumb skeleton */}
+          <div className="flex items-center space-x-2">
+            <div className="h-3 w-10 bg-slate-200 rounded" />
+            <div className="h-3.5 w-3 bg-slate-300/50" />
+            <div className="h-3 w-12 bg-slate-200 rounded" />
+            <div className="h-3.5 w-3 bg-slate-300/50" />
+            <div className="h-3 w-28 bg-slate-200 rounded" />
+          </div>
+
+          {/* Hero Showcase Card skeleton */}
+          <div className="bg-white rounded-[24px] border border-slate-200/60 p-6 md:p-8 shadow-[0_4px_30px_rgba(15,23,42,0.01)] grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Left Column: Image stage */}
+            <div className="lg:col-span-5 flex flex-col space-y-4">
+              <div className="w-full aspect-square md:aspect-[4/3] rounded-3xl bg-slate-200" />
+              <div className="flex justify-center space-x-2.5">
+                {Array.from({ length: 4 }).map((_, idx) => (
+                  <div key={idx} className="w-16 h-16 rounded-2xl bg-slate-200" />
+                ))}
+              </div>
+            </div>
+
+            {/* Right Column: Info block */}
+            <div className="lg:col-span-7 space-y-6 text-left">
+              <div className="space-y-3">
+                <div className="h-4 w-16 bg-slate-300 rounded" />
+                <div className="h-7 w-3/4 bg-slate-300 rounded mt-2" />
+                <div className="h-4 w-28 bg-slate-200 rounded mt-2" />
+              </div>
+
+              {/* Price card */}
+              <div className="p-4.5 bg-slate-50/50 rounded-2xl border border-slate-100 space-y-3">
+                <div className="h-6 w-32 bg-slate-300 rounded" />
+                <div className="h-3 w-40 bg-slate-200 rounded" />
+              </div>
+
+              {/* Specs line info */}
+              <div className="flex space-x-3 pb-2">
+                <div className="h-8 w-20 bg-slate-200 rounded-lg" />
+                <div className="h-8 w-20 bg-slate-200 rounded-lg" />
+              </div>
+
+              {/* Buttons */}
+              <div className="flex items-center space-x-3 pt-2">
+                <div className="h-12 flex-grow bg-slate-300 rounded-full" />
+                <div className="h-12 flex-grow bg-slate-200 rounded-full" />
+                <div className="w-12 h-12 rounded-full bg-slate-200" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout>
       <div className="w-full flex flex-col items-stretch space-y-6 select-none text-left">
@@ -277,83 +342,7 @@ export const ProductDetail: React.FC = () => {
               </div>
             </div>
 
-            {/* Color selector */}
-            <div className="space-y-2">
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Color: {selectedColor}</span>
-              <div className="flex items-center space-x-3.5">
-                {productData.colors.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => setSelectedColor(color)}
-                    className={cn(
-                      "w-7.5 h-7.5 rounded-full border-2 cursor-pointer transition-all duration-200 active:scale-90 flex items-center justify-center p-[2px]",
-                      selectedColor === color ? "border-blue-600 shadow" : "border-transparent"
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "w-full h-full rounded-full border border-slate-100/50",
-                        color === 'Space Black' || color === 'Graphite Gray'
-                          ? "bg-slate-850"
-                          : "bg-slate-200"
-                      )}
-                    />
-                  </button>
-                ))}
-              </div>
-                  {/* Premium Memory blocks Selector */}
-            <div className="space-y-2.5">
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Unified Memory</span>
-              <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                {productData.memories.map((mem) => (
-                  <button
-                    key={mem.value}
-                    onClick={() => setSelectedMemory(mem.value)}
-                    className={cn(
-                      "p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border-2 text-center sm:text-left flex flex-col sm:flex-row items-center sm:items-start space-y-1 sm:space-y-0 sm:space-x-3 transition-all duration-300 cursor-pointer active:scale-98",
-                      selectedMemory === mem.value
-                        ? "border-blue-600 bg-blue-50/5 text-blue-650"
-                        : "border-slate-100 bg-slate-50/30 hover:border-slate-250"
-                    )}
-                  >
-                    <Cpu className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0" />
-                    <div className="text-center sm:text-left">
-                      <div className="text-[10px] sm:text-xs font-black text-slate-800 leading-none">{mem.value}</div>
-                      <div className="text-[8.5px] sm:text-[10px] text-slate-455 font-bold mt-0.5 whitespace-nowrap">
-                        {mem.desc === 'Standard Configuration' ? 'Base' : mem.desc.replace('Add ', '+')}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
 
-            {/* Premium Storage blocks Selector */}
-            <div className="space-y-2.5">
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Storage Capacity</span>
-              <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                {productData.storages.map((storeOption) => (
-                  <button
-                    key={storeOption.value}
-                    onClick={() => setSelectedStorage(storeOption.value)}
-                    className={cn(
-                      "p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border-2 text-center sm:text-left flex flex-col sm:flex-row items-center sm:items-start space-y-1 sm:space-y-0 sm:space-x-3 transition-all duration-300 cursor-pointer active:scale-98",
-                      selectedStorage === storeOption.value
-                        ? "border-blue-600 bg-blue-50/5 text-blue-650"
-                        : "border-slate-100 bg-slate-50/30 hover:border-slate-250"
-                    )}
-                  >
-                    <HardDrive className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0" />
-                    <div className="text-center sm:text-left">
-                      <div className="text-[10px] sm:text-xs font-black text-slate-800 leading-none">{storeOption.value}</div>
-                      <div className="text-[8.5px] sm:text-[10px] text-slate-455 font-bold mt-0.5 whitespace-nowrap">
-                        {storeOption.extra > 0 ? `+₹${storeOption.extra.toLocaleString('en-IN')}` : 'Base'}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>          </div>
 
             {/* Actions button blocks */}
             <div className="flex items-center space-x-3 pt-2">

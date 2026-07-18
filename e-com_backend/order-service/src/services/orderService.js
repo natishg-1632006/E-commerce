@@ -283,9 +283,166 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token)
 
 // ─── Read Operations ──────────────────────────────────────────────────────────
 
-const getAllOrders = async () => {
+const getAllOrders = async (params = {}) => {
   const { Items = [] } = await docClient.send(new ScanCommand({ TableName: ORDERS_TABLE }));
-  return Items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  
+  let filtered = [...Items];
+  
+  // 1. Search filter: search matches orderid, email, shippingAddress.fullName, shippingAddress.phone, customerInfo.fullName, customerInfo.email
+  if (params.search) {
+    const searchVal = String(params.search).toLowerCase().trim();
+    filtered = filtered.filter(o => {
+      const orderIdMatch = o.orderid && String(o.orderid).toLowerCase().includes(searchVal);
+      const emailMatch = o.email && String(o.email).toLowerCase().includes(searchVal);
+      const customerEmailMatch = o.customerInfo && o.customerInfo.email && String(o.customerInfo.email).toLowerCase().includes(searchVal);
+      const fullNameMatch = o.shippingAddress && o.shippingAddress.fullName && String(o.shippingAddress.fullName).toLowerCase().includes(searchVal);
+      const phoneMatch = o.shippingAddress && o.shippingAddress.phone && String(o.shippingAddress.phone).includes(searchVal);
+      const customerPhoneMatch = o.customerInfo && o.customerInfo.phone && String(o.customerInfo.phone).includes(searchVal);
+      
+      return orderIdMatch || emailMatch || customerEmailMatch || fullNameMatch || phoneMatch || customerPhoneMatch;
+    });
+  }
+  
+  // 2. Order status filter
+  if (params.orderStatus) {
+    const statusVal = String(params.orderStatus).toUpperCase();
+    filtered = filtered.filter(o => {
+      const st = String(o.orderStatus || o.status || '').toUpperCase();
+      return st === statusVal;
+    });
+  }
+  
+  // 3. Payment status filter
+  if (params.paymentStatus) {
+    const statusVal = String(params.paymentStatus).toUpperCase();
+    filtered = filtered.filter(o => {
+      const pst = String(o.paymentStatus || '').toUpperCase();
+      return pst === statusVal;
+    });
+  }
+  
+  // 4. Payment method filter
+  if (params.paymentMethod) {
+    const methodVal = String(params.paymentMethod).toUpperCase();
+    filtered = filtered.filter(o => {
+      const pm = String(o.paymentMethod || '').toUpperCase();
+      return pm === methodVal;
+    });
+  }
+  
+  // 5. Date Range (startDate & endDate)
+  if (params.startDate) {
+    const start = new Date(params.startDate);
+    filtered = filtered.filter(o => o.createdAt && new Date(o.createdAt) >= start);
+  }
+  if (params.endDate) {
+    const end = new Date(params.endDate);
+    filtered = filtered.filter(o => o.createdAt && new Date(o.createdAt) <= end);
+  }
+  
+  // 6. Min & Max amount
+  if (params.minAmount !== undefined && params.minAmount !== '') {
+    const min = Number(params.minAmount);
+    filtered = filtered.filter(o => Number(o.totalAmount || 0) >= min);
+  }
+  if (params.maxAmount !== undefined && params.maxAmount !== '') {
+    const max = Number(params.maxAmount);
+    filtered = filtered.filter(o => Number(o.totalAmount || 0) <= max);
+  }
+  
+  // 7. Sort
+  const sortVal = params.sort ? String(params.sort).toLowerCase() : 'newest';
+  if (sortVal === 'newest') {
+    filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  } else if (sortVal === 'oldest') {
+    filtered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  } else if (sortVal === 'highestamount') {
+    filtered.sort((a, b) => Number(b.totalAmount || 0) - Number(a.totalAmount || 0));
+  } else if (sortVal === 'lowestamount') {
+    filtered.sort((a, b) => Number(a.totalAmount || 0) - Number(b.totalAmount || 0));
+  }
+  
+  // 8. Pagination
+  const total = filtered.length;
+  let page = Number(params.page || 1);
+  let limit = Number(params.limit || 10);
+  if (page < 1) page = 1;
+  if (limit < 1) limit = 10;
+  
+  const totalPages = Math.ceil(total / limit);
+  const startIndex = (page - 1) * limit;
+  const data = filtered.slice(startIndex, startIndex + limit);
+  // Calculate statistics from the filtered dataset (before pagination slice)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todaysOrdersCount = filtered.filter(o => (o.createdAt || '').startsWith(todayStr)).length;
+  
+  const pendingOrdersCount = filtered.filter(o => {
+    const st = String(o.orderStatus || o.status || '').toUpperCase();
+    return st === 'PENDING_PAYMENT' || st === 'PENDING PAYMENT';
+  }).length;
+  
+  const processingOrdersCount = filtered.filter(o => {
+    const st = String(o.orderStatus || o.status || '').toUpperCase();
+    return st === 'PROCESSING';
+  }).length;
+  
+  const packedOrdersCount = filtered.filter(o => {
+    const st = String(o.orderStatus || o.status || '').toUpperCase();
+    return st === 'PACKED';
+  }).length;
+  
+  const shippedOrdersCount = filtered.filter(o => {
+    const st = String(o.orderStatus || o.status || '').toUpperCase();
+    return st === 'SHIPPED';
+  }).length;
+  
+  const outForDeliveryOrdersCount = filtered.filter(o => {
+    const st = String(o.orderStatus || o.status || '').toUpperCase();
+    return st === 'OUT_FOR_DELIVERY' || st === 'OUT FOR DELIVERY';
+  }).length;
+  
+  const deliveredOrdersCount = filtered.filter(o => {
+    const st = String(o.orderStatus || o.status || '').toUpperCase();
+    return st === 'DELIVERED';
+  }).length;
+  
+  const completedOrdersCount = filtered.filter(o => {
+    const st = String(o.orderStatus || o.status || '').toUpperCase();
+    return st === 'COMPLETED';
+  }).length;
+  
+  const cancelledOrdersCount = filtered.filter(o => {
+    const st = String(o.orderStatus || o.status || '').toUpperCase();
+    return st === 'CANCELLED' || st === 'CANCELED';
+  }).length;
+  
+  // Revenue: Sum totalAmount only where paymentStatus is PAID (case-insensitive)
+  const revenue = filtered
+    .filter(o => String(o.paymentStatus || '').toUpperCase() === 'PAID')
+    .reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
+  
+  const statistics = {
+    totalOrders: total,
+    todaysOrders: todaysOrdersCount,
+    processing: processingOrdersCount,
+    packed: packedOrdersCount,
+    shipped: shippedOrdersCount,
+    outForDelivery: outForDeliveryOrdersCount,
+    delivered: deliveredOrdersCount + completedOrdersCount,
+    cancelled: cancelledOrdersCount,
+    revenue
+  };
+  
+  return {
+    data,
+    statistics,
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: totalPages || 1
+    }
+  };
 };
 
 const getOrderById = async (orderid) => {

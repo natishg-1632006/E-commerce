@@ -6,6 +6,7 @@ import { authService } from '../services/auth.service';
 import { getUserProfileApi } from '../api/authApi';
 import { loginStart, loginSuccess, loginFailure, setProfile } from '../store/authSlice';
 import type { LoginInput, RegisterInput, ForgotPasswordInput, ResetPasswordInput } from '../utils/validation';
+import { getRoleFromToken, getNameFromToken } from '../utils/jwtDecode';
 
 export const useLogin = () => {
   const navigate = useNavigate();
@@ -23,6 +24,10 @@ export const useLogin = () => {
       }
     },
     onSuccess: async (res) => {
+      // Decode Cognito ID token to extract role from cognito:groups / custom:role
+      const resolvedRole = getRoleFromToken(res.idToken);
+      const resolvedName = getNameFromToken(res.idToken, res.user.email);
+
       // Dispatch loginSuccess to store credentials in Redux and localStorage
       dispatch(
         loginSuccess({
@@ -31,27 +36,34 @@ export const useLogin = () => {
           refreshToken: res.refreshToken,
           expiration: res.expiration,
           user: { email: res.user.email },
+          role: resolvedRole,
         })
       );
 
-      // Immediately fetch user profile
+      // Fetch profile from backend; fall back to token-derived values
       try {
         const profile = await getUserProfileApi();
-        dispatch(setProfile(profile));
+        dispatch(setProfile({
+          ...profile,
+          // Token-decoded role takes priority over backend profile.role
+          // because cognito:groups is the authoritative source of truth
+          role: resolvedRole,
+          fullName: profile.fullName || resolvedName,
+        }));
       } catch (err: any) {
-        console.error('Profile fetch failed, using fallback', err);
-        // Fallback profile if backend /profile is not active
+        console.error('Profile fetch failed, using token claims as fallback', err);
         dispatch(
           setProfile({
             email: res.user.email,
-            fullName: 'NatCart Shopper',
-            role: 'user',
+            fullName: resolvedName,
+            role: resolvedRole,
           })
         );
       }
 
       toast.success('Welcome back to NatCart!');
-      navigate('/');
+      // Route admin to admin dashboard, regular users to marketplace
+      navigate(resolvedRole === 'admin' ? '/admin' : '/');
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to sign in. Please try again.');

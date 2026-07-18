@@ -26,8 +26,13 @@ const createOrder = async (req, res, next) => {
 
 const getAllOrders = async (req, res, next) => {
   try {
-    const orders = await service.getAllOrders();
-    success(res, orders, 200, { total: orders.length });
+    const { data, statistics, meta } = await service.getAllOrders(req.query);
+    return res.status(200).json({
+      success: true,
+      data,
+      statistics,
+      meta
+    });
   } catch (err) {
     next(err);
   }

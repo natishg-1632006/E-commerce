@@ -52,6 +52,7 @@ const authSlice = createSlice({
         refreshToken: string;
         expiration: string;
         user: { email: string };
+        role?: string;
       }>
     ) {
       state.loading = false;
@@ -61,6 +62,11 @@ const authSlice = createSlice({
       state.expiration = action.payload.expiration;
       state.user = action.payload.user;
       state.isAuthenticated = true;
+      // Store role decoded from Cognito token immediately
+      if (action.payload.role) {
+        state.role = action.payload.role;
+        localStorage.setItem('natcart_role', action.payload.role);
+      }
 
       localStorage.setItem('natcart_access_token', action.payload.accessToken);
       localStorage.setItem('natcart_token', action.payload.accessToken); // fallback compatibility
