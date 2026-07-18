@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import type { RootState } from '../../store';
 import { AdminLayout } from '../../layouts/AdminLayout';
 import { DashboardSkeleton } from '../../components/admin/AdminSkeletons';
+import { orderService } from '../../services/order.service';
+import { productService } from '../../services/product.service';
 import {
   ShoppingCart,
   Wallet,
@@ -18,11 +20,6 @@ import {
   User,
   Boxes,
 } from 'lucide-react';
-import macbookImg from '../../assets/products/macbook.jpg';
-import rogImg from '../../assets/products/rog.jpg';
-import dellImg from '../../assets/products/dell.jpg';
-import ssdImg from '../../assets/products/samsung_t7_ssd.jpg';
-import sleeveImg from '../../assets/products/laptop_sleeve_leather.jpg';
 
 // --- Stat Card Component ---
 interface StatCardProps {
@@ -72,22 +69,26 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, subtitle, icon, iconB
   );
 };
 
-// --- Mock Data ---
-const recentOrders = [
-  { id: 'Order #10025', customer: 'John David', amount: '₹2,450', status: 'Completed', time: '10:45 AM', items: '3 Items', payment: 'Online' },
-  { id: 'Order #10024', customer: 'Mark Smith', amount: '₹1,850', status: 'Processing', time: '09:30 AM', items: '1 Item', payment: 'COD' },
-  { id: 'Order #10023', customer: 'Lisa Wong', amount: '₹4,200', status: 'Pending', time: '08:15 AM', items: '2 Items', payment: 'Online' },
-  { id: 'Order #10022', customer: 'Raj Patel', amount: '₹7,990', status: 'Completed', time: 'Yesterday', items: '5 Items', payment: 'Card' },
-  { id: 'Order #10021', customer: 'Sarah Kim', amount: '₹3,500', status: 'Cancelled', time: 'Yesterday', items: '2 Items', payment: 'COD' },
-];
+// --- Types for real data ---
+interface DashboardOrder {
+  id: string;
+  customer: string;
+  amount: string;
+  status: string;
+  time: string;
+  items: string;
+  payment: string;
+}
 
-const topSelling = [
-  { rank: '🥇', name: 'MacBook Pro M3 Max', category: 'Laptops', sales: 245, rev: '₹4,25,000', stock: 42, img: macbookImg },
-  { rank: '🥈', name: 'ROG Zephyrus G16', category: 'Gaming', sales: 193, rev: '₹3,10,000', stock: 7, img: rogImg },
-  { rank: '🥉', name: 'Dell XPS 15 Plus', category: 'Laptops', sales: 151, rev: '₹2,80,000', stock: 0, img: dellImg },
-  { rank: '4', name: 'Samsung T7 Shield 2TB', category: 'Storage', sales: 98, rev: '₹1,42,000', stock: 54, img: ssdImg },
-  { rank: '5', name: 'Leather Laptop Sleeve 16"', category: 'Accessories', sales: 86, rev: '₹34,000', stock: 32, img: sleeveImg },
-];
+interface DashboardProduct {
+  rank: string;
+  name: string;
+  category: string;
+  rev: string;
+  stock: number;
+  img: string | null;
+  price: number;
+}
 
 // --- Order Status Badge component ---
 const OrderStatusBadge: React.FC<{ status: string }> = ({ status }) => {
@@ -153,11 +154,87 @@ const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 450);
-    return () => clearTimeout(timer);
+  // Real data state
+  const [recentOrders, setRecentOrders] = useState<DashboardOrder[]>([]);
+  const [topSelling, setTopSelling] = useState<DashboardProduct[]>([]);
+  const [todayRevenue, setTodayRevenue] = useState(0);
+  const [todayOrdersCount, setTodayOrdersCount] = useState(0);
+  const [completedOrdersCount, setCompletedOrdersCount] = useState(0);
+  const [outOfStockCount, setOutOfStockCount] = useState(0);
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        const [ordersRes, productsRes] = await Promise.all([
+          orderService.getOrders({ limit: 1000 }),
+          productService.getProducts({ limit: 1000 }),
+        ]);
+
+        // ── Orders ──
+        const allOrders = ordersRes.orders || [];
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        const revenue = allOrders
+          .filter(o => (o.createdAt || '').startsWith(todayStr) && String(o.paymentStatus || '').toUpperCase() === 'PAID')
+          .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+        const todayCount = allOrders.filter(o => (o.createdAt || '').startsWith(todayStr)).length;
+
+        const completedCount = allOrders.filter(o =>
+          ['Delivered', 'Completed'].includes(o.orderStatus || '')
+        ).length;
+
+        setTodayRevenue(revenue);
+        setTodayOrdersCount(todayCount);
+        setCompletedOrdersCount(completedCount);
+
+        // Recent 5 orders
+        const mapped: DashboardOrder[] = allOrders.slice(0, 5).map(o => ({
+          id: o.orderId,
+          customer: o.shippingAddress?.fullName || o.customerInfo?.fullName || 'Unknown',
+          amount: `₹${(o.totalAmount || 0).toLocaleString('en-IN')}`,
+          status: o.orderStatus || 'Pending Payment',
+          time: o.createdAt
+            ? new Date(o.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+            : '—',
+          items: `${o.items?.length ?? 0} Item${(o.items?.length ?? 0) !== 1 ? 's' : ''}`,
+          payment: o.paymentMethod || 'Online',
+        }));
+        setRecentOrders(mapped);
+
+        // ── Products ──
+        let allProducts: any[] = [];
+        if (productsRes) {
+          if (Array.isArray(productsRes)) {
+            allProducts = productsRes;
+          } else {
+            allProducts = (productsRes as any).products || (productsRes as any).data || [];
+          }
+        }
+
+        const oos = allProducts.filter(p => Number(p.stock ?? 0) === 0).length;
+        setOutOfStockCount(oos);
+
+        const medals = ['🥇', '🥈', '🥉', '4', '5'];
+        const top: DashboardProduct[] = allProducts.slice(0, 5).map((p: any, idx: number) => ({
+          rank: medals[idx] || String(idx + 1),
+          name: p.name || 'Unknown Product',
+          category: p.category || 'Uncategorized',
+          rev: `₹${(p.price || 0).toLocaleString('en-IN')}`,
+          stock: Number(p.stock ?? 0),
+          img: p.images?.[0]?.imageUrl || p.img || null,
+          price: Number(p.price ?? 0),
+        }));
+        setTopSelling(top);
+
+      } catch (err) {
+        console.error('Dashboard data fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
   }, []);
 
   const handleTabChange = (tab: 'orders' | 'products') => {
@@ -184,9 +261,6 @@ const AdminDashboard: React.FC = () => {
 
   const adminName = getAdminDisplayName();
 
-  // Out of stock product count
-  const outOfStockCount = topSelling.filter(p => p.stock === 0).length;
-
   return (
     <AdminLayout>
       <div className="p-5 sm:p-7 space-y-6">
@@ -209,31 +283,28 @@ const AdminDashboard: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             title="Today's Revenue"
-            value="₹25,430"
-            subtitle="Updated Today"
+            value={`₹${todayRevenue.toLocaleString('en-IN')}`}
+            subtitle="Based on paid orders today"
             icon={<Wallet className="w-[18px] h-[18px]" />}
             iconBgColor="bg-blue-50 text-blue-600"
-            growth="+12%"
           />
           <StatCard
             title="Today's Orders"
-            value="150"
-            subtitle="Updated Today"
+            value={todayOrdersCount}
+            subtitle="All orders placed today"
             icon={<ShoppingCart className="w-[18px] h-[18px]" />}
             iconBgColor="bg-purple-50 text-purple-600"
-            growth="+8%"
           />
           <StatCard
             title="Completed Orders"
-            value="132"
-            subtitle="Updated Today"
+            value={completedOrdersCount}
+            subtitle="Delivered + Completed"
             icon={<CheckCircle className="w-[18px] h-[18px]" />}
             iconBgColor="bg-emerald-50 text-emerald-600"
-            growth="+15%"
           />
           <StatCard
             title="Out of Stock"
-            value="8"
+            value={outOfStockCount}
             subtitle="Needs Attention"
             icon={<AlertTriangle className="w-[18px] h-[18px]" />}
             iconBgColor="bg-red-50 text-red-500"
@@ -456,16 +527,16 @@ const AdminDashboard: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* 2. Sales Count: col-span-2 */}
+                        {/* 2. Price: col-span-2 */}
                         <div className="col-span-2 flex items-center space-x-1 text-[11px] text-slate-500 font-semibold sm:pl-2">
                           <ShoppingBag className="w-3.5 h-3.5 text-slate-350" />
-                          <span>{product.sales} Sales</span>
+                          <span>{product.rev}</span>
                         </div>
 
-                        {/* 3. Revenue generated: col-span-2 */}
+                        {/* 3. Stock count: col-span-2 */}
                         <div className="col-span-2 flex items-center space-x-1 text-[12px] font-extrabold text-slate-800 sm:pl-2">
-                          <Wallet className="w-3.5 h-3.5 text-slate-350" />
-                          <span>{product.rev}</span>
+                          <Boxes className="w-3.5 h-3.5 text-slate-350" />
+                          <span>{product.stock} in Stock</span>
                         </div>
 
                         {/* 4. Status indicator: col-span-2 */}

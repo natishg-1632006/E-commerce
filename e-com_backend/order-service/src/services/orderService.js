@@ -357,8 +357,10 @@ const getAllOrders = async (params = {}) => {
   } else if (sortVal === 'oldest') {
     filtered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   } else if (sortVal === 'highestamount') {
+    filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     filtered.sort((a, b) => Number(b.totalAmount || 0) - Number(a.totalAmount || 0));
   } else if (sortVal === 'lowestamount') {
+    filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     filtered.sort((a, b) => Number(a.totalAmount || 0) - Number(b.totalAmount || 0));
   }
   
@@ -373,69 +375,43 @@ const getAllOrders = async (params = {}) => {
   const startIndex = (page - 1) * limit;
   const data = filtered.slice(startIndex, startIndex + limit);
   const todayStr = new Date().toISOString().split('T')[0];
-  const isPendingQuery =
-    (params.paymentStatus && String(params.paymentStatus).toUpperCase() === 'PENDING') ||
-    (params.orderStatus && String(params.orderStatus).toUpperCase() === 'PENDING_PAYMENT') ||
-    (params.orderStatus && String(params.orderStatus).toUpperCase() === 'PENDING PAYMENT');
 
-  let statistics = {};
+  // Compute global statistics across all orders
+  const todaysPaid = Items.filter(o => (o.createdAt || '').startsWith(todayStr)).length;
+  const processingOrdersCount = Items.filter(o => String(o.orderStatus || '').toUpperCase() === 'PROCESSING').length;
+  const packedOrdersCount = Items.filter(o => String(o.orderStatus || '').toUpperCase() === 'PACKED').length;
+  const shippedOrdersCount = Items.filter(o => String(o.orderStatus || '').toUpperCase() === 'SHIPPED').length;
+  const outForDeliveryOrdersCount = Items.filter(o => {
+    const ost = String(o.orderStatus || '').toUpperCase();
+    return ost === 'OUT_FOR_DELIVERY' || ost === 'OUT FOR DELIVERY';
+  }).length;
+  const deliveredOrdersCount = Items.filter(o => String(o.orderStatus || '').toUpperCase() === 'DELIVERED').length;
+  const completedOrdersCount = Items.filter(o => String(o.orderStatus || '').toUpperCase() === 'COMPLETED').length;
+  const cancelledOrdersCount = Items.filter(o => {
+    const ost = String(o.orderStatus || '').toUpperCase();
+    return ost === 'CANCELLED' || ost === 'CANCELED' || ost === 'PAYMENT_FAILED' || ost === 'PAYMENT FAILED';
+  }).length;
+  const pendingOrdersCount = Items.filter(o => {
+    const ost = String(o.orderStatus || '').toUpperCase();
+    const pst = String(o.paymentStatus || '').toUpperCase();
+    return ost === 'PENDING_PAYMENT' || ost === 'PENDING PAYMENT' || (pst === 'PENDING' && String(o.paymentMethod || '').toUpperCase() !== 'COD');
+  }).length;
+  const revenueVal = Items
+    .filter(o => String(o.paymentStatus || '').toUpperCase() === 'PAID')
+    .reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
 
-  if (isPendingQuery) {
-    // 1. Pending Payments Dashboard Metrics
-    const pendingOrders = Items.filter(o => {
-      const pst = String(o.paymentStatus || '').toUpperCase();
-      const ost = String(o.orderStatus || '').toUpperCase();
-      return pst === 'PENDING' || ost === 'PENDING_PAYMENT' || ost === 'PENDING PAYMENT';
-    });
-
-    const todaysPending = pendingOrders.filter(o => (o.createdAt || '').startsWith(todayStr)).length;
-    const expiredPending = pendingOrders.filter(o => {
-      const isExpired = o.expiresAt && new Date(o.expiresAt) < new Date();
-      const ost = String(o.orderStatus || '').toUpperCase();
-      return isExpired || ost === 'EXPIRED' || ost === 'PAYMENT_FAILED';
-    }).length;
-    const pendingVal = pendingOrders.reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
-
-    statistics = {
-      totalPendingOrders: pendingOrders.length,
-      pendingPaymentValue: pendingVal,
-      todaysPendingOrders: todaysPending,
-      expiredPendingPayments: expiredPending
-    };
-  } else {
-    // 2. Fulfillment Dashboard Metrics (Paid orders only)
-    const paidOrders = Items.filter(o => 
-      String(o.paymentStatus || '').toUpperCase() === 'PAID'
-    );
-
-    const todaysPaid = paidOrders.filter(o => (o.createdAt || '').startsWith(todayStr)).length;
-    const processingOrdersCount = paidOrders.filter(o => String(o.orderStatus || '').toUpperCase() === 'PROCESSING').length;
-    const packedOrdersCount = paidOrders.filter(o => String(o.orderStatus || '').toUpperCase() === 'PACKED').length;
-    const shippedOrdersCount = paidOrders.filter(o => String(o.orderStatus || '').toUpperCase() === 'SHIPPED').length;
-    const outForDeliveryOrdersCount = paidOrders.filter(o => {
-      const ost = String(o.orderStatus || '').toUpperCase();
-      return ost === 'OUT_FOR_DELIVERY' || ost === 'OUT FOR DELIVERY';
-    }).length;
-    const deliveredOrdersCount = paidOrders.filter(o => String(o.orderStatus || '').toUpperCase() === 'DELIVERED').length;
-    const completedOrdersCount = paidOrders.filter(o => String(o.orderStatus || '').toUpperCase() === 'COMPLETED').length;
-    const cancelledOrdersCount = paidOrders.filter(o => {
-      const ost = String(o.orderStatus || '').toUpperCase();
-      return ost === 'CANCELLED' || ost === 'CANCELED';
-    }).length;
-    const revenueVal = paidOrders.reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
-
-    statistics = {
-      totalOrders: paidOrders.length,
-      todaysOrders: todaysPaid,
-      processing: processingOrdersCount,
-      packed: packedOrdersCount,
-      shipped: shippedOrdersCount,
-      outForDelivery: outForDeliveryOrdersCount,
-      delivered: deliveredOrdersCount + completedOrdersCount,
-      cancelled: cancelledOrdersCount,
-      revenue: revenueVal
-    };
-  }
+  const statistics = {
+    totalOrders: Items.length,
+    todaysOrders: todaysPaid,
+    pending: pendingOrdersCount,
+    processing: processingOrdersCount,
+    packed: packedOrdersCount,
+    shipped: shippedOrdersCount,
+    outForDelivery: outForDeliveryOrdersCount,
+    delivered: deliveredOrdersCount + completedOrdersCount,
+    cancelled: cancelledOrdersCount,
+    revenue: revenueVal
+  };
   
   return {
     data,

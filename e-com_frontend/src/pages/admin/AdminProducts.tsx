@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { productService } from '../../services/product.service';
 import { AdminLayout } from '../../layouts/AdminLayout';
 import { ProductsTableSkeleton, DetailPageSkeleton, SafeImage } from '../../components/admin/AdminSkeletons';
@@ -430,6 +430,8 @@ const FloatingTextarea: React.FC<{
 const AdminProducts: React.FC = () => {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isCreateRoute = location.pathname.endsWith('/create');
 
   // Backend dynamic lists
   const [productsList, setProductsList] = useState<ProductItem[]>([]);
@@ -482,20 +484,22 @@ const AdminProducts: React.FC = () => {
 
   // Synchronously update loading states when mode/productId changes to prevent visual flashes
   const [prevProductId, setPrevProductId] = useState(productId);
+  const [prevIsCreateRoute, setPrevIsCreateRoute] = useState(isCreateRoute);
 
-  if (productId !== prevProductId) {
+  if (productId !== prevProductId || isCreateRoute !== prevIsCreateRoute) {
     setPrevProductId(productId);
+    setPrevIsCreateRoute(isCreateRoute);
     setProductNotFound(false);
-    if (productId && productId !== 'create') {
-      setDetailsLoading(true);
-      setEditingProductId(productId);
-      setIsCreatingProduct(true);
-      setIsPreviewMode(true);
-    } else if (productId === 'create') {
+    if (isCreateRoute) {
       setDetailsLoading(false);
       setEditingProductId(null);
       setIsCreatingProduct(true);
       setIsPreviewMode(false);
+    } else if (productId && productId !== 'create') {
+      setDetailsLoading(true);
+      setEditingProductId(productId);
+      setIsCreatingProduct(true);
+      setIsPreviewMode(true);
     } else {
       setDetailsLoading(false);
       setEditingProductId(null);
@@ -540,12 +544,12 @@ const AdminProducts: React.FC = () => {
   };
 
   const getCategoryLabel = (id: string) => {
-    return categoriesList.find(c => c.id === id)?.name || 'Uncategorized';
+    return categoriesList.find(c => c.categoryId === id)?.name || 'Uncategorized';
   };
 
   // Convert categories list to selection options format
   const categoriesOptions = categoriesList.map(c => ({
-    value: c.id,
+    value: c.categoryId,
     label: c.name
   }));
 
@@ -592,7 +596,7 @@ const AdminProducts: React.FC = () => {
       id: p.id || p.productId || '',
       name: p.name || '',
       brand: p.brand || '',
-      category: p.category || (p.categoryId ? getCategoryLabel(p.categoryId) : 'Uncategorized'),
+      category: p.category || p.categoryName || (p.categoryId ? getCategoryLabel(p.categoryId) : 'Uncategorized'),
       categoryId: p.categoryId || '',
       price: p.price || 0,
       discount: p.discount || 0,
@@ -906,7 +910,7 @@ const AdminProducts: React.FC = () => {
 
 
 
-  // Validate form requirements before publishing
+  // Validate form requirements before publishing (new product)
   const isPublishEnabled = !!(
     name.trim() &&
     brand.trim() &&
@@ -916,8 +920,13 @@ const AdminProducts: React.FC = () => {
     description.trim()
   );
 
+  // For editing existing products: more lenient — just needs basic fields
+  const isSaveEnabled = editingProductId
+    ? !!(name.trim() && brand.trim() && price > 0 && description.trim())
+    : isPublishEnabled;
+
   const handlePublishProduct = async () => {
-    if (!isPublishEnabled) return;
+    if (!isSaveEnabled) return;
 
     setIsSaving(true);
     try {
@@ -931,16 +940,17 @@ const AdminProducts: React.FC = () => {
           if (!matchedFile) {
             throw new Error(`File details not found in upload queue for key: ${img.key}`);
           }
-          return {
-            fileName: matchedFile.file.name,
-            contentType: matchedFile.file.type
-          };
+          return matchedFile.file.name;
         });
 
         const res = await productService.generateUploadUrls(filesPayload);
         let urls: any[] = [];
-        if (res && res.success && Array.isArray(res.data)) {
+        if (res && res.success && res.data && Array.isArray(res.data.images)) {
+          urls = res.data.images;
+        } else if (res && res.success && Array.isArray(res.data)) {
           urls = res.data;
+        } else if (res && Array.isArray(res.images)) {
+          urls = res.images;
         } else if (Array.isArray(res)) {
           urls = res;
         } else if (res.data && Array.isArray(res.data)) {
@@ -996,10 +1006,13 @@ const AdminProducts: React.FC = () => {
         }
       });
 
+      const selectedCategoryName = categoriesList.find((c: any) => c.categoryId === categoryId)?.name || '';
+
       const payload: any = {
         name: name.trim(),
         brand: brand.trim(),
         categoryId,
+        categoryName: selectedCategoryName,
         price: Number(price),
         discount: Number(discount),
         description: description.trim(),
@@ -1764,9 +1777,9 @@ const AdminProducts: React.FC = () => {
 
                     <button
                       onClick={handlePublishProduct}
-                      disabled={!isPublishEnabled || isSaving || isUploading}
+                      disabled={!isSaveEnabled || isSaving || isUploading}
                       className={`h-9 px-5.5 rounded-xl text-[11.5px] font-black transition-all shadow-sm active:scale-95 flex items-center space-x-1.5 cursor-pointer ${
-                        isPublishEnabled && !isSaving && !isUploading
+                        isSaveEnabled && !isSaving && !isUploading
                           ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20'
                           : 'bg-slate-100 text-slate-400 border border-slate-200 shadow-none cursor-not-allowed'
                       }`}
@@ -1851,7 +1864,7 @@ const AdminProducts: React.FC = () => {
                         <BrandDropdown selected={brand} brands={brandOptionsList} onSelect={setBrand} />
 
                         {/* Searchable Category Dropdown */}
-                        <CategoryDropdown selectedId={categoryId} categories={categoriesList.map(c => ({ id: c.id, label: c.name }))} onSelect={setCategoryId} />
+                        <CategoryDropdown selectedId={categoryId} categories={categoriesList.map(c => ({ id: c.categoryId, label: c.name }))} onSelect={setCategoryId} />
                       </div>
 
                       {/* Pricing block with 2x2 Grid Layout */}

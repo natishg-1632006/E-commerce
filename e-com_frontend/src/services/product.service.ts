@@ -97,7 +97,7 @@ class ProductService {
     return response.data;
   }
 
-  async generateUploadUrls(files: { fileName: string; contentType: string }[]) {
+  async generateUploadUrls(files: any[]) {
     const response = await productApi.post('/api/v1/products/upload-urls', { files });
     return response.data;
   }

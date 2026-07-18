@@ -227,9 +227,30 @@ const updateProduct = async (id, data) => {
 
   if (data.price !== undefined) data.price = parseFloat(data.price);
 
+  // If categoryId changed, resolve the canonical categoryName from category service
+  if (data.categoryId) {
+    try {
+      const category = await getCategory(data.categoryId);
+      if (category && category.name) {
+        data.categoryName = category.name;
+      }
+    } catch (err) {
+      console.error('[updateProduct] Could not resolve categoryName:', err.message);
+    }
+  }
+
+  // Strip empty strings, null, and undefined — DynamoDB rejects empty string attribute values
+  Object.keys(data).forEach((key) => {
+    if (data[key] === null || data[key] === undefined || data[key] === '') {
+      delete data[key];
+    }
+  });
+
   data.updatedAt = new Date().toISOString();
 
   const fields = Object.keys(data);
+  if (fields.length === 0) return existing;
+
   const updateExpr = 'SET ' + fields.map((k) => `#${k} = :${k}`).join(', ');
   const attrNames = Object.fromEntries(fields.map((k) => [`#${k}`, k]));
   const attrValues = Object.fromEntries(fields.map((k) => [`:${k}`, data[k]]));
@@ -345,7 +366,8 @@ const generateUploadUrls = async (files) => {
 
   const uploads = [];
 
-  for (const fileName of files) {
+  for (const file of files) {
+    const fileName = typeof file === 'string' ? file : (file.fileName || file.name || '');
     const extension = path.extname(fileName);
 
     const key = `products/${uuidv4()}${extension}`;

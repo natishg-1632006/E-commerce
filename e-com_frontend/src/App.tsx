@@ -18,7 +18,6 @@ import AddressForm from './pages/AddressForm';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminProducts from './pages/admin/AdminProducts';
 import AdminOrders from './pages/admin/AdminOrders';
-import AdminPendingPayments from './pages/admin/AdminPendingPayments';
 import AdminCustomers from './pages/admin/AdminCustomers';
 import AdminInventory from './pages/admin/AdminInventory';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
@@ -202,14 +201,7 @@ export function App() {
                 </AdminRoute>
               }
             />
-            <Route
-              path="/admin/pending-payments"
-              element={
-                <AdminRoute>
-                  <AdminPendingPayments />
-                </AdminRoute>
-              }
-            />
+
             <Route
               path="/admin/customers"
               element={

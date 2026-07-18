@@ -4,8 +4,10 @@ const { ORDER_STATUS } = require('../constants/orderConstants');
 
 const handleValidation = (req, res, next) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty())
+  if (!errors.isEmpty()) {
+    console.error('Backend validation failed:', errors.array());
     return res.status(422).json({ success: false, errors: errors.array() });
+  }
   next();
 };
 
