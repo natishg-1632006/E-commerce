@@ -12,6 +12,14 @@ import { fetchCart } from '../../../store/cartSlice';
 import guideImg from '../../../assets/products/guide.jpg';
 import { productService } from '../../../services/product.service';
 
+const formatCategoryName = (name: string) => {
+  if (!name) return '';
+  return name
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
 export interface NavbarProps {
   onToggleSidebar?: () => void;
   showSidebarToggle?: boolean;
@@ -95,6 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>Categories</span>
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-250 ${isMegamenuOpen ? 'transform rotate-180' : ''}`} />
               </button>
+              <Link to="/?all=true" className="hover:text-blue-600 transition-colors">Products</Link>
               <Link to="/?brand=Apple" className="hover:text-blue-600 transition-colors">Brands</Link>
             </nav>
           </div>
@@ -167,8 +176,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                     const catImage = cat.image?.url || guideImg;
                     return (
                       <Link
-                        key={cat.id}
-                        to={`/?category=${cat.id}`}
+                        key={cat.categoryId}
+                        to={`/?category=${cat.categoryId}`}
                         onClick={() => setIsMegamenuOpen(false)}
                         className="flex items-center space-x-3.5 p-3 rounded-2xl border border-slate-100 hover:border-blue-150 hover:bg-blue-50/30 transition-all select-none group"
                       >
@@ -177,7 +186,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         </div>
                         <div className="flex-grow min-w-0 text-left">
                           <h4 className="text-[12.5px] font-black text-slate-850 truncate leading-tight group-hover:text-blue-600 transition-colors">
-                            {cat.name}
+                            {formatCategoryName(cat.name)}
                           </h4>
                           {cat.slug && (
                             <p className="text-[9.5px] font-bold text-slate-400 truncate mt-0.5">

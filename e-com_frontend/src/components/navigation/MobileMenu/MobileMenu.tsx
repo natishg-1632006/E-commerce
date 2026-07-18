@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ShoppingBag, Settings, User, LogOut, ArrowRight, X } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, Settings, User, LogOut, ArrowRight, X, Boxes } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../../../store';
 import { logout as logoutAction } from '../../../store/authSlice';
@@ -19,6 +19,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
   const menuLinks = [
     { to: '/', label: 'Home Page' },
+    { to: '/?all=true', label: 'Shop All Products', icon: Boxes },
     { to: '/dashboard', label: 'My Dashboard', icon: LayoutDashboard },
     { to: '/orders', label: 'My Orders', icon: ShoppingBag },
     { to: '/profile', label: 'My Profile', icon: User },

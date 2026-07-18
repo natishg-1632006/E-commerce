@@ -38,6 +38,14 @@ import heroBannerImg from '../assets/future_tech_banner.jpg';
 
 import { productService } from '../services/product.service';
 
+const formatCategoryName = (name: string) => {
+  if (!name) return '';
+  return name
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
 const SkeletonProductCard: React.FC = () => {
   return (
     <div className="p-3.5 rounded-[28px] border border-slate-200/50 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.02)] flex flex-col justify-between items-stretch overflow-hidden shimmer-sweep select-none">
@@ -144,8 +152,9 @@ export const Marketplace: React.FC = () => {
     const brand = params.get('brand');
     const search = params.get('search');
     const category = params.get('category');
+    const all = params.get('all');
 
-    if (brand || search || category) {
+    if (brand || search || category || all) {
       if (brand) setSelectedBrands([brand]);
       else setSelectedBrands([]);
 
@@ -434,7 +443,7 @@ export const Marketplace: React.FC = () => {
               selectedCategory === cat.name ? "text-blue-600 font-extrabold" : "text-slate-550 hover:text-slate-800"
             )}
           >
-            <span>{cat.name}</span>
+            <span>{formatCategoryName(cat.name)}</span>
           </button>
         ))}
       </div>

@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Provider } from 'react-redux';
-import { Toaster } from 'react-hot-toast';
 import AuthRoutes from './routes/AuthRoutes';
 import { store } from './store';
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -262,7 +261,6 @@ export function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
-        <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
       </QueryClientProvider>
     </Provider>
   );

@@ -34,6 +34,14 @@ import guideImg from '../assets/products/guide.jpg';
 
 import { productService } from '../services/product.service';
 
+const formatCategoryName = (name: string) => {
+  if (!name) return '';
+  return name
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
 export const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const dispatch = useDispatch<AppDispatch>();
@@ -262,7 +270,9 @@ export const ProductDetail: React.FC = () => {
         <div className="flex items-center space-x-1.5 text-[11px] font-bold text-slate-400">
           <Link to="/" className="hover:text-blue-600 transition-colors">Home</Link>
           <ChevronRight className="w-3 h-3 text-slate-350" />
-          <Link to="/" className="hover:text-blue-600 transition-colors">Laptops</Link>
+          <Link to={`/?category=${productData.categoryId || ''}`} className="hover:text-blue-600 transition-colors">
+            {formatCategoryName(productData.categoryName || productData.category || 'Products')}
+          </Link>
           <ChevronRight className="w-3 h-3 text-slate-350" />
           <span className="text-slate-800">{productData.name}</span>
         </div>
