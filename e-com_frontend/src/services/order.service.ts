@@ -344,6 +344,17 @@ class OrderService {
     else if (data.orders && Array.isArray(data.orders)) rawList = data.orders;
     return rawList.map(normaliseOrder);
   }
+
+  async createOrder(orderData: {
+    email: string;
+    shippingAddress: ShippingAddress;
+    paymentMethod: string;
+  }): Promise<Order> {
+    const response = await orderApi.post('/api/v1/orders', orderData);
+    const data = response.data;
+    const raw = data.data || data.order || data;
+    return normaliseOrder(raw);
+  }
 }
 
 export const orderService = new OrderService();

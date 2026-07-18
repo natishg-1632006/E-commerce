@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
 import type { RootState, AppDispatch } from '../store';
-import { clearCartBackend } from '../store/cartSlice';
+import { clearCart } from '../store/cartSlice';
 import { MainLayout } from '../layouts/MainLayout';
 import { Button } from '../components/ui/Button';
 import { Price } from '../components/ui/Price';
@@ -19,14 +19,12 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { cn } from '../lib/cn';
+import toast from 'react-hot-toast';
+import { addressService } from '../services/address.service';
+import { paymentService } from '../services/payment.service';
+import { orderService } from '../services/order.service';
 
-// Import local images for enrichment helper
-import macbookImg from '../assets/products/macbook.jpg';
-import rogImg from '../assets/products/rog.jpg';
-import dellImg from '../assets/products/dell.jpg';
-import ssdImg from '../assets/products/samsung_t7_ssd.jpg';
-import sleeveImg from '../assets/products/laptop_sleeve_leather.jpg';
-import matImg from '../assets/products/premium_desk_mat.jpg';
+import guideImg from '../assets/products/guide.jpg';
 
 export const Checkout: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -38,15 +36,6 @@ export const Checkout: React.FC = () => {
   const [activeStep, setActiveStep] = useState(2);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Trigger simulated loading skeleton state on stepper changes
-  useEffect(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [activeStep]);
-
   // Shipping form fields
   const [fullName, setFullName] = useState('');
   const [emailAddress, setEmailAddress] = useState('');
@@ -57,31 +46,44 @@ export const Checkout: React.FC = () => {
   const [stateName, setStateName] = useState('');
   const [pincode, setPincode] = useState('');
 
-  // Pre-populate shipping address fields from profile/local storage default address
-  React.useEffect(() => {
+  // Trigger simulated loading skeleton state on stepper changes (except step 2 which fetches from API)
+  useEffect(() => {
+    if (activeStep !== 2) {
+      setIsLoading(true);
+      const timer = setTimeout(() => {
+        setIsLoading(false);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [activeStep]);
+
+  // Load profile address from backend
+  useEffect(() => {
+    const loadAddress = async () => {
+      setIsLoading(true);
+      try {
+        const addr = await addressService.getAddress();
+        if (addr) {
+          if (addr.fullName) setFullName(addr.fullName);
+          if (addr.phone) setMobileNumber(addr.phone);
+          const parts = (addr.address || '').split(', ');
+          if (parts.length > 0) setAddressLine1(parts[0]);
+          if (parts.length > 1) setAddressLine2(parts.slice(1).join(', '));
+          if (addr.city) setCity(addr.city);
+          if (addr.state) setStateName(addr.state);
+          if (addr.pincode) setPincode(addr.pincode);
+        }
+      } catch (err) {
+        console.error('Error fetching address from profile:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadAddress();
     if (profile) {
       if (profile.fullName) setFullName(profile.fullName);
       if (profile.email) setEmailAddress(profile.email);
       if (profile.phone) setMobileNumber(profile.phone);
-    }
-
-    const savedAddr = localStorage.getItem('natcart_addresses');
-    if (savedAddr) {
-      try {
-        const addrList = JSON.parse(savedAddr);
-        const defaultAddr = addrList.find((a: any) => a.isDefault) || addrList[0];
-        if (defaultAddr) {
-          if (defaultAddr.fullName) setFullName(defaultAddr.fullName);
-          if (defaultAddr.addressLine1) setAddressLine1(defaultAddr.addressLine1);
-          if (defaultAddr.addressLine2) setAddressLine2(defaultAddr.addressLine2);
-          if (defaultAddr.city) setCity(defaultAddr.city);
-          if (defaultAddr.stateName) setStateName(defaultAddr.stateName);
-          if (defaultAddr.pincode) setPincode(defaultAddr.pincode);
-          if (defaultAddr.phone) setMobileNumber(defaultAddr.phone);
-        }
-      } catch (e) {
-        // Fallback
-      }
     }
   }, [profile]);
 
@@ -184,60 +186,18 @@ export const Checkout: React.FC = () => {
   }
 
 
-  // Enrich items with specs and images
+  // Enrich items with specs and images directly from backend data
   const enrichCartItem = (item: any) => {
-    if (item.id === '1' || item.id === 'prod-macbook') {
-      return {
-        ...item,
-        brand: 'APPLE',
-        specs: '32GB RAM • 1TB SSD',
-        image: macbookImg,
-      };
-    }
-    if (item.id === '2' || item.id === 'prod-rog') {
-      return {
-        ...item,
-        brand: 'ASUS ROG',
-        specs: 'RTX 4070 • 16GB RAM • 1TB SSD',
-        image: rogImg,
-      };
-    }
-    if (item.id === '3' || item.id === 'prod-dell') {
-      return {
-        ...item,
-        brand: 'DELL',
-        specs: '32GB RAM • 1TB SSD',
-        image: dellImg,
-      };
-    }
-    if (item.id === 'acc-ssd') {
-      return {
-        ...item,
-        brand: 'SAMSUNG',
-        specs: 'Graphite • Rugged SSD',
-        image: ssdImg,
-      };
-    }
-    if (item.id === 'acc-sleeve') {
-      return {
-        ...item,
-        brand: 'PREMIUM ACCESSORIES',
-        specs: 'Brown • Leather',
-        image: sleeveImg,
-      };
-    }
-    if (item.id === 'acc-mat') {
-      return {
-        ...item,
-        brand: 'PREMIUM ACCESSORIES',
-        specs: 'Charcoal Grey • Felt',
-        image: matImg,
-      };
-    }
+    const image = item.image || item.imageUrl || (item.images && item.images.length > 0 ? (item.images[0].url || item.images[0].imageUrl) : null) || guideImg;
+    const ram = item.specifications?.ram || item.specifications?.RAM || item.ram || '';
+    const storage = item.specifications?.storage || item.specifications?.Storage || item.storage || '';
+    const specs = ram && storage ? `${ram} • ${storage}` : (ram || storage || 'Standard');
+
     return {
       ...item,
       brand: item.brand?.toUpperCase() || 'ACCESSORIES',
-      specs: `${item.ram ? item.ram : ''}${item.storage ? ` • ${item.storage}` : ''}`,
+      specs,
+      image,
     };
   };
 
@@ -285,7 +245,7 @@ export const Checkout: React.FC = () => {
     }
   };
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (paymentMethod === 'card') {
       const cardErrors: Record<string, string> = {};
       if (!cardName.trim()) cardErrors.cardName = 'Name is required';
@@ -299,14 +259,45 @@ export const Checkout: React.FC = () => {
       }
     }
 
-    // Generate order ID
-    const randomId = `NC-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
-    setOrderId(randomId);
-    setActiveStep(4);
+    const shippingAddress = {
+      fullName,
+      phone: mobileNumber,
+      address: `${addressLine1}${addressLine2 ? ', ' : ''}${addressLine2}`,
+      city,
+      state: stateName,
+      pincode: pincode.replace(/\s/g, ''),
+    };
+
+    let mappedMethod = 'Card';
+    if (paymentMethod === 'cod') mappedMethod = 'COD';
+    else if (paymentMethod === 'upi') mappedMethod = 'UPI';
+    else if (paymentMethod === 'netbank') mappedMethod = 'NetBanking';
+
+    setIsLoading(true);
+    try {
+      const order = await orderService.createOrder({
+        email: emailAddress,
+        shippingAddress,
+        paymentMethod: mappedMethod,
+      });
+
+      const createdOrderId = order.orderId;
+      await paymentService.createPayment(createdOrderId, mappedMethod);
+
+      setOrderId(createdOrderId);
+      setActiveStep(4);
+      toast.success('Order placed successfully!');
+    } catch (err: any) {
+      console.error('Error placing order:', err);
+      const errMsg = err.response?.data?.message || err.message || 'Failed to place order.';
+      toast.error(errMsg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleFinish = () => {
-    dispatch(clearCartBackend());
+    dispatch(clearCart());
     navigate('/');
   };
 

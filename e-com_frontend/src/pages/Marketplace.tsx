@@ -68,15 +68,7 @@ const SkeletonProductCard: React.FC = () => {
   );
 };
 
-const mapCategoryToDbValue = (name: string): string => {
-  const norm = name.toLowerCase();
-  if (norm === 'laptops' || norm === 'laptop') return 'Laptop';
-  if (norm === 'smartwatches' || norm === 'smartwatch') return 'Smartwatch';
-  if (norm === 'audio') return 'Audio';
-  if (norm === 'gaming') return 'Gaming';
-  if (norm === 'accessories') return 'Accessories';
-  return name;
-};
+
 
 export const Marketplace: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -180,24 +172,16 @@ export const Marketplace: React.FC = () => {
     }
   }, [location]);
 
-  // Load backend products reactively based on search & category
+  // Load backend products reactively based on search (category is filtered locally due to Dynamo DB schema mismatch)
   useEffect(() => {
     const fetchProducts = async () => {
       setIsLoading(true);
       try {
         const params: any = {
-          limit: 100, // Fetch all products for the category to filter locally
+          limit: 100, // Fetch all products matching current search query to filter locally
         };
 
         if (debouncedSearch) params.search = debouncedSearch;
-        
-        if (selectedCategory) {
-          const catObj = categoriesList.find(
-            (c: any) => (c.categoryId || c.id) === selectedCategory
-          );
-          const catName = catObj ? catObj.name : selectedCategory;
-          params.category = mapCategoryToDbValue(catName);
-        }
 
         const res = await productService.getProducts(params);
         const list = res.data || res.products || (Array.isArray(res) ? res : []);
@@ -213,27 +197,43 @@ export const Marketplace: React.FC = () => {
     if (showShopGrid) {
       fetchProducts();
     }
-  }, [showShopGrid, selectedCategory, debouncedSearch, categoriesList]);
+  }, [showShopGrid, debouncedSearch]);
 
-  // Extract dynamic filter checkboxes based on currently loaded category products
+  // Locally filtered products by category only (used for sidebar filter options)
+  const categoryProducts = useMemo(() => {
+    let result = [...rawProducts];
+    if (selectedCategory) {
+      const lowerSelected = selectedCategory.toLowerCase();
+      result = result.filter((p) => {
+        const pCat = p.categoryName || p.category || '';
+        return (
+          p.categoryId === selectedCategory ||
+          pCat.toLowerCase() === lowerSelected
+        );
+      });
+    }
+    return result;
+  }, [rawProducts, selectedCategory]);
+
+  // Extract dynamic filter checkboxes based on category products
   const availableBrands = useMemo(() => {
-    const brands = rawProducts.map((p) => p.brand).filter(Boolean);
+    const brands = categoryProducts.map((p) => p.brand).filter(Boolean);
     return Array.from(new Set(brands)).sort() as string[];
-  }, [rawProducts]);
+  }, [categoryProducts]);
 
   const availableRam = useMemo(() => {
-    const rams = rawProducts.map((p) => p.specifications?.ram).filter(Boolean);
+    const rams = categoryProducts.map((p) => p.specifications?.ram || p.specifications?.RAM).filter(Boolean);
     return Array.from(new Set(rams)).sort() as string[];
-  }, [rawProducts]);
+  }, [categoryProducts]);
 
   const availableStorage = useMemo(() => {
-    const storages = rawProducts.map((p) => p.specifications?.storage).filter(Boolean);
+    const storages = categoryProducts.map((p) => p.specifications?.storage || p.specifications?.Storage).filter(Boolean);
     return Array.from(new Set(storages)).sort() as string[];
-  }, [rawProducts]);
+  }, [categoryProducts]);
 
-  // Filter and sort raw products list locally
+  // Filter and sort products locally
   const filteredProducts = useMemo(() => {
-    let result = [...rawProducts];
+    let result = [...categoryProducts];
 
     // Brand filter
     if (selectedBrands.length > 0) {
@@ -242,12 +242,18 @@ export const Marketplace: React.FC = () => {
 
     // RAM filter
     if (selectedRam.length > 0) {
-      result = result.filter((p) => selectedRam.includes(p.specifications?.ram || ''));
+      result = result.filter((p) => {
+        const rVal = p.specifications?.ram || p.specifications?.RAM || '';
+        return selectedRam.includes(rVal);
+      });
     }
 
     // Storage filter
     if (selectedStorage.length > 0) {
-      result = result.filter((p) => selectedStorage.includes(p.specifications?.storage || ''));
+      result = result.filter((p) => {
+        const sVal = p.specifications?.storage || p.specifications?.Storage || '';
+        return selectedStorage.includes(sVal);
+      });
     }
 
     // Price range filter
@@ -268,7 +274,7 @@ export const Marketplace: React.FC = () => {
     }
 
     return result;
-  }, [rawProducts, selectedBrands, selectedRam, selectedStorage, minPrice, maxPrice, sortBy]);
+  }, [categoryProducts, selectedBrands, selectedRam, selectedStorage, minPrice, maxPrice, sortBy]);
 
   // Paginate local list
   const productsList = useMemo(() => {
@@ -422,10 +428,10 @@ export const Marketplace: React.FC = () => {
         {categoriesList.map((cat) => (
           <button
             key={cat.categoryId || cat.id}
-            onClick={() => setSelectedCategory(cat.categoryId || cat.id)}
+            onClick={() => setSelectedCategory(cat.name)}
             className={cn(
               "text-[11.5px] font-semibold py-0.5 transition-colors cursor-pointer text-left pl-1 flex items-center space-x-1.5",
-              selectedCategory === (cat.categoryId || cat.id) ? "text-blue-600 font-extrabold" : "text-slate-550 hover:text-slate-800"
+              selectedCategory === cat.name ? "text-blue-600 font-extrabold" : "text-slate-550 hover:text-slate-800"
             )}
           >
             <span>{cat.name}</span>
@@ -655,7 +661,7 @@ export const Marketplace: React.FC = () => {
                     <button
                       key={cat.categoryId || cat.id}
                       onClick={() => {
-                        setSelectedCategory(cat.categoryId || cat.id);
+                        setSelectedCategory(cat.name);
                         setShowShopGrid(true);
                       }}
                       className="p-4 sm:p-6 bg-white border border-slate-200/60 rounded-[24px] sm:rounded-[32px] flex flex-col items-center justify-center space-y-3 hover:border-blue-300 hover:shadow-md transition-all active:scale-98 cursor-pointer select-none"
@@ -776,10 +782,10 @@ export const Marketplace: React.FC = () => {
                           </h3>
                           <div className="flex items-center space-x-1 mt-1.5 flex-wrap gap-y-1">
                             <span className="px-2 py-0.5 rounded bg-slate-50 text-[9px] font-bold text-slate-455 border border-slate-100/80">
-                              {prod.specifications?.ram || 'Standard'}
+                              {prod.specifications?.ram || prod.specifications?.RAM || 'Standard'}
                             </span>
                             <span className="px-2 py-0.5 rounded bg-slate-50 text-[9px] font-bold text-slate-455 border border-slate-100/80">
-                              {prod.specifications?.storage || 'Standard'}
+                              {prod.specifications?.storage || prod.specifications?.Storage || 'Standard'}
                             </span>
                           </div>
                         </div>
@@ -993,10 +999,10 @@ export const Marketplace: React.FC = () => {
                           </div>
                           <div className="flex flex-wrap gap-1.5 mt-2">
                             <span className="text-[9.5px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-[5px]">
-                              {prod.specifications?.ram || 'Standard'}
+                              {prod.specifications?.ram || prod.specifications?.RAM || 'Standard'}
                             </span>
                             <span className="text-[9.5px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-[5px]">
-                              {prod.specifications?.storage || 'Standard'}
+                              {prod.specifications?.storage || prod.specifications?.Storage || 'Standard'}
                             </span>
                           </div>
                         </div>

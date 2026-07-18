@@ -56,12 +56,21 @@ export interface Cart {
 
 class CartService {
   async getCart(): Promise<Cart | null> {
-    const response = await cartApi.get('/api/v1/cart');
-    const res = response.data;
-    if (res && res.success && res.data) {
-      return res.data;
+    try {
+      const response = await cartApi.get('/api/v1/cart', {
+        validateStatus: (status) => (status >= 200 && status < 300) || status === 404,
+      });
+      if (response.status === 404) {
+        return null;
+      }
+      const res = response.data;
+      if (res && res.success && res.data) {
+        return res.data;
+      }
+      return res || null;
+    } catch (error) {
+      return null;
     }
-    return res || null;
   }
 
   async addToCart(productId: string, quantity: number): Promise<Cart> {

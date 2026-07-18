@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import toast from 'react-hot-toast';
+import { addressService } from '../services/address.service';
 
 interface Address {
   id: string;
@@ -44,53 +45,56 @@ export const Profile: React.FC = () => {
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
   const [personalErrors, setPersonalErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
-
-  // Trigger simulated loading skeleton state on mount
-  useEffect(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Addresses list state
   const [addresses, setAddresses] = useState<Address[]>([]);
 
-  // Initialize values
+  // Load profile and address from backend on mount
   useEffect(() => {
-    if (profile) {
-      setFullNameState(profile.fullName || '');
-      setPhoneState(profile.phone || '');
-    }
+    const loadProfileAndAddress = async () => {
+      setIsLoading(true);
+      try {
+        const fullProfile = await addressService.getProfile();
+        // Sync profile to Redux
+        dispatch(setProfile({
+          email: fullProfile.email,
+          fullName: fullProfile.fullName,
+          phone: fullProfile.phone,
+          profileImage: fullProfile.profileImage,
+          role: fullProfile.role,
+        }));
+        
+        setFullNameState(fullProfile.fullName || '');
+        setPhoneState(fullProfile.phone || '');
 
-    // Load addresses from localStorage
-    const savedAddr = localStorage.getItem('natcart_addresses');
-    if (savedAddr) {
-      setAddresses(JSON.parse(savedAddr));
-    } else {
-      // Mock initial address
-      const initial: Address[] = [
-        {
-          id: 'addr-1',
-          label: 'Home Address',
-          fullName: profile?.fullName || 'Natish G',
-          addressLine1: 'Flat 402, Oakwood Residency',
-          addressLine2: 'Outer Ring Road, Marathahalli',
-          city: 'Bengaluru',
-          stateName: 'Karnataka',
-          pincode: '560037',
-          phone: profile?.phone || '+91 98765 43210',
-          isDefault: true,
+        if (fullProfile.address) {
+          const addr = fullProfile.address;
+          const parts = (addr.address || '').split(', ');
+          const addressList: Address[] = [{
+            id: 'addr-profile',
+            label: 'Home Address',
+            fullName: addr.fullName || fullProfile.fullName || '',
+            addressLine1: parts[0] || '',
+            addressLine2: parts.slice(1).join(', ') || '',
+            city: addr.city || '',
+            stateName: addr.state || '',
+            pincode: addr.pincode || '',
+            phone: addr.phone || fullProfile.phone || '',
+            isDefault: true,
+          }];
+          setAddresses(addressList);
+        } else {
+          setAddresses([]);
         }
-      ];
-      setAddresses(initial);
-      localStorage.setItem('natcart_addresses', JSON.stringify(initial));
-    }
-  }, [profile]);
+      } catch (err) {
+        console.error('Error loading profile from backend:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadProfileAndAddress();
+  }, [dispatch]);
 
   // Handle personal details save
-  const handleSavePersonal = (e: React.FormEvent) => {
+  const handleSavePersonal = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (!fullNameState.trim()) errs.fullName = 'Full name is required';
@@ -102,17 +106,25 @@ export const Profile: React.FC = () => {
     }
 
     setPersonalErrors({});
-    
-    // Update profile in store
-    if (profile) {
-      const updatedProfile = {
+    setIsLoading(true);
+    try {
+      const updated = await addressService.updateProfile(fullNameState, phoneState);
+      dispatch(setProfile({
         ...profile,
-        fullName: fullNameState,
-        phone: phoneState,
-      };
-      dispatch(setProfile(updatedProfile));
+        email: updated.email,
+        fullName: updated.fullName,
+        phone: updated.phone,
+        profileImage: updated.profileImage,
+        role: updated.role,
+      }));
       toast.success('Personal details updated successfully!');
       setIsEditingPersonal(false);
+    } catch (err: any) {
+      console.error('Error updating profile:', err);
+      const errMsg = err.response?.data?.message || err.message || 'Failed to update personal details.';
+      toast.error(errMsg);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -202,43 +214,28 @@ export const Profile: React.FC = () => {
   }
 
   // Handle address delete
-  const handleDeleteAddress = (id: string, e: React.MouseEvent) => {
+  const handleDeleteAddress = async (_id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = addresses.filter((a) => a.id !== id);
-    
-    // If we deleted the default, set first remaining as default
-    if (addresses.find((a) => a.id === id)?.isDefault && updated.length > 0) {
-      updated[0].isDefault = true;
-      // Sync default address to redux profile
-      if (profile) {
-        dispatch(setProfile({ ...profile, address: JSON.stringify(updated[0]) }));
-      }
-    } else if (updated.length === 0) {
+    setIsLoading(true);
+    try {
+      await addressService.deleteAddress();
+      setAddresses([]);
       if (profile) {
         dispatch(setProfile({ ...profile, address: '' }));
       }
+      toast.success('Address removed successfully!');
+    } catch (err: any) {
+      console.error('Error deleting address:', err);
+      toast.error('Failed to remove address.');
+    } finally {
+      setIsLoading(false);
     }
-
-    setAddresses(updated);
-    localStorage.setItem('natcart_addresses', JSON.stringify(updated));
-    toast.success('Address removed successfully!');
   };
 
   // Toggle default status directly from card click
-  const handleSetDefault = (id: string) => {
-    const updated = addresses.map((a) => ({
-      ...a,
-      isDefault: a.id === id,
-    }));
-    
-    const defaultAddress = updated.find((a) => a.id === id);
-    if (defaultAddress && profile) {
-      dispatch(setProfile({ ...profile, address: JSON.stringify(defaultAddress) }));
-    }
-
-    setAddresses(updated);
-    localStorage.setItem('natcart_addresses', JSON.stringify(updated));
-    toast.success('Default address updated!');
+  const handleSetDefault = (_id: string) => {
+    // Only one address is supported by the backend, which is default by definition
+    toast.success('Address is set as default.');
   };
 
   return (

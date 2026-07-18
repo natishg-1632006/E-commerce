@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Logo } from '../../common/Logo';
 import { Search } from '../../ui/Search';
-import { ShoppingCart, Menu, X, Heart, Smartphone, Headphones, Watch, Gamepad2, Tv, Speaker, ChevronDown } from 'lucide-react';
+import { ShoppingCart, Menu, X, Heart, ChevronDown } from 'lucide-react';
 import { UserMenu } from '../UserMenu';
 import { MobileMenu } from '../MobileMenu';
 import { Link } from 'react-router-dom';
@@ -10,6 +10,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import type { RootState, AppDispatch } from '../../../store';
 import { fetchCart } from '../../../store/cartSlice';
 import guideImg from '../../../assets/products/guide.jpg';
+import { productService } from '../../../services/product.service';
 
 export interface NavbarProps {
   onToggleSidebar?: () => void;
@@ -25,6 +26,24 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMegamenuOpen, setIsMegamenuOpen] = useState(false);
   const megamenuRef = useRef<HTMLDivElement | null>(null);
+  const [categoriesList, setCategoriesList] = useState<any[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      setCategoriesLoading(true);
+      try {
+        const res = await productService.getCategories();
+        const list = res.data || (Array.isArray(res) ? res : []);
+        setCategoriesList(list.filter((c: any) => (c.status || 'ACTIVE').toUpperCase() === 'ACTIVE'));
+      } catch (err) {
+        console.error('Error fetching navbar categories:', err);
+      } finally {
+        setCategoriesLoading(false);
+      }
+    };
+    fetchCategories();
+  }, []);
 
   const { items } = useSelector((state: RootState) => state.cart);
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
@@ -126,67 +145,51 @@ export const Navbar: React.FC<NavbarProps> = ({
           {isMegamenuOpen && (
             <div
               ref={megamRef => { megamenuRef.current = megamRef; }}
-              className="absolute top-[64px] left-4 lg:left-32 w-[calc(100vw-32px)] max-w-lg bg-white border border-slate-200/50 shadow-[0_24px_50px_rgba(15,23,42,0.06)] rounded-[24px] p-6 grid grid-cols-3 gap-6 z-[1200] overflow-hidden"
+              className="absolute top-[64px] left-4 lg:left-32 w-[calc(100vw-32px)] max-w-lg bg-white border border-slate-200/50 shadow-[0_24px_50px_rgba(15,23,42,0.06)] rounded-[24px] p-6 z-[1200] overflow-hidden"
             >
-              {/* Column 1: Mobile & Audio */}
-              <div className="flex flex-col items-start text-left space-y-3.5">
-                <h4 className="text-[11px] font-black text-slate-900 tracking-wider uppercase">Mobile & Audio</h4>
-                <ul className="space-y-2.5">
-                  <li>
-                    <Link to="/?brand=Apple" className="flex items-center space-x-2 text-slate-500 hover:text-blue-600 text-xs font-semibold" onClick={() => setIsMegamenuOpen(false)}>
-                      <Smartphone className="w-4 h-4 text-slate-400" />
-                      <span>Smartphones</span>
-                    </Link>
-                  </li>
-                  <li>
-                    <Link to="/?brand=ASUS" className="flex items-center space-x-2 text-slate-500 hover:text-blue-600 text-xs font-semibold" onClick={() => setIsMegamenuOpen(false)}>
-                      <Headphones className="w-4 h-4 text-slate-400" />
-                      <span>Headphones</span>
-                    </Link>
-                  </li>
-                  <li>
-                    <Link to="/?brand=Dell" className="flex items-center space-x-2 text-slate-500 hover:text-blue-600 text-xs font-semibold" onClick={() => setIsMegamenuOpen(false)}>
-                      <Watch className="w-4 h-4 text-slate-400" />
-                      <span>Wearables</span>
-                    </Link>
-                  </li>
-                </ul>
-              </div>
-
-              {/* Column 2: Entertainment */}
-              <div className="flex flex-col items-start text-left space-y-3.5">
-                <h4 className="text-[11px] font-black text-slate-900 tracking-wider uppercase">Entertainment</h4>
-                <ul className="space-y-2.5">
-                  <li>
-                    <Link to="/?brand=ASUS" className="flex items-center space-x-2 text-slate-500 hover:text-blue-600 text-xs font-semibold" onClick={() => setIsMegamenuOpen(false)}>
-                      <Gamepad2 className="w-4 h-4 text-slate-400" />
-                      <span>Gaming</span>
-                    </Link>
-                  </li>
-                  <li>
-                    <Link to="/?brand=Dell" className="flex items-center space-x-2 text-slate-500 hover:text-blue-600 text-xs font-semibold" onClick={() => setIsMegamenuOpen(false)}>
-                      <Tv className="w-4 h-4 text-slate-400" />
-                      <span>Smart TVs</span>
-                    </Link>
-                  </li>
-                  <li>
-                    <Link to="/?brand=ASUS" className="flex items-center space-x-2 text-slate-500 hover:text-blue-600 text-xs font-semibold" onClick={() => setIsMegamenuOpen(false)}>
-                      <Speaker className="w-4 h-4 text-slate-400" />
-                      <span>Home Audio</span>
-                    </Link>
-                  </li>
-                </ul>
-              </div>
-
-              {/* Column 3: Guide Banner */}
-              <div className="flex flex-col items-start text-left bg-blue-50/50 p-3 rounded-2xl border border-blue-100/50 space-y-2">
-                <span className="text-[9.5px] font-black text-blue-700 tracking-wide uppercase">Seasonal Tech Guide</span>
-                <img src={guideImg} alt="Tech Guide illustration" className="w-full h-20 object-cover rounded-xl border border-blue-100" />
-                <Link to="/?brand=Apple" className="text-[10px] font-black text-blue-600 hover:text-blue-750 flex items-center space-x-1" onClick={() => setIsMegamenuOpen(false)}>
-                  <span>View Guide</span>
-                  <span>&rarr;</span>
-                </Link>
-              </div>
+              {categoriesLoading ? (
+                <div className="w-full py-8 flex flex-col space-y-4 animate-pulse">
+                  <div className="h-4 w-32 bg-slate-200 rounded" />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="h-10 bg-slate-105 rounded-xl" />
+                    <div className="h-10 bg-slate-105 rounded-xl" />
+                    <div className="h-10 bg-slate-105 rounded-xl" />
+                    <div className="h-10 bg-slate-105 rounded-xl" />
+                  </div>
+                </div>
+              ) : categoriesList.length === 0 ? (
+                <div className="w-full py-8 text-center text-slate-400 font-semibold text-xs select-none">
+                  No active categories found
+                </div>
+              ) : (
+                <div className="w-full grid grid-cols-2 gap-4">
+                  {categoriesList.map((cat) => {
+                    const catImage = cat.image?.url || guideImg;
+                    return (
+                      <Link
+                        key={cat.id}
+                        to={`/?category=${cat.id}`}
+                        onClick={() => setIsMegamenuOpen(false)}
+                        className="flex items-center space-x-3.5 p-3 rounded-2xl border border-slate-100 hover:border-blue-150 hover:bg-blue-50/30 transition-all select-none group"
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100/80 overflow-hidden flex items-center justify-center flex-shrink-0">
+                          <img src={catImage} alt={cat.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                        </div>
+                        <div className="flex-grow min-w-0 text-left">
+                          <h4 className="text-[12.5px] font-black text-slate-850 truncate leading-tight group-hover:text-blue-600 transition-colors">
+                            {cat.name}
+                          </h4>
+                          {cat.slug && (
+                            <p className="text-[9.5px] font-bold text-slate-400 truncate mt-0.5">
+                              {cat.slug}
+                            </p>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>

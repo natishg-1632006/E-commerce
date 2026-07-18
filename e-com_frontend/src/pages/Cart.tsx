@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
 import type { RootState, AppDispatch } from '../store';
@@ -32,10 +32,10 @@ import {
 import toast from 'react-hot-toast';
 import { cn } from '../lib/cn';
 
+import { productService } from '../services/product.service';
+
 // Import local images
 import macbookImg from '../assets/products/macbook.jpg';
-import rogImg from '../assets/products/rog.jpg';
-import dellImg from '../assets/products/dell.jpg';
 import ssdImg from '../assets/products/samsung_t7_ssd.jpg';
 import sleeveImg from '../assets/products/laptop_sleeve_leather.jpg';
 import matImg from '../assets/products/premium_desk_mat.jpg';
@@ -49,9 +49,21 @@ export const Cart: React.FC = () => {
   const [couponInput, setCouponInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Load cart from backend on mount
+  const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
+
+  // Load cart and catalog products from backend on mount
   useEffect(() => {
     dispatch(fetchCart());
+    const loadCatalog = async () => {
+      try {
+        const res = await productService.getProducts({ limit: 100 });
+        const prodData = res.data || res.products || (Array.isArray(res) ? res : []);
+        setCatalogProducts(prodData || []);
+      } catch (err) {
+        console.error('Error loading catalog for cart recommendations:', err);
+      }
+    };
+    loadCatalog();
   }, [dispatch]);
 
   const isLoading = status === 'loading' || isProcessing;
@@ -130,6 +142,168 @@ export const Cart: React.FC = () => {
         icon: '❌',
       });
     }
+  };
+
+
+
+  const handleRemoveCoupon = () => {
+    dispatch(removeCoupon());
+    toast.success('Coupon removed');
+  };
+
+  const handleCheckout = () => {
+    navigate('/checkout');
+  };
+
+  // Helper helper to enrich the items with custom properties dynamically from backend data
+  const enrichCartItem = (item: any) => {
+    const image = item.image || item.imageUrl || (item.images && item.images.length > 0 ? (item.images[0].url || item.images[0].imageUrl) : null) || guideImg;
+    const ram = item.specifications?.ram || item.specifications?.RAM || item.ram || '';
+    const storage = item.specifications?.storage || item.specifications?.Storage || item.storage || '';
+    const specs = ram && storage ? `${ram} • ${storage}` : (ram || storage || 'Standard');
+    const brand = item.brand?.toUpperCase() || 'ACCESSORIES';
+    const listPrice = item.listPrice || (item.discount ? Math.round(item.price / (1 - item.discount / 100)) : item.price);
+    const saleBadge = item.saleBadge || (item.discount ? `${item.discount}% OFF` : '');
+    const stockStatus = item.stock !== undefined ? (item.stock > 0 ? 'In Stock' : 'Out of Stock') : 'In Stock';
+
+    return {
+      ...item,
+      brand,
+      specs,
+      image,
+      listPrice,
+      saleBadge,
+      stockStatus,
+      deliveryStatus: 'Express Delivery by Tomorrow',
+    };
+  };
+
+  // Pricing calculations (INR)
+  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const shippingThreshold = 50000; // Free shipping threshold in Rupees
+  const isFreeShipping = subtotal >= shippingThreshold;
+  const shipping = isFreeShipping ? 0 : subtotal > 0 ? 1500 : 0;
+  const tax = subtotal * 0.018; // 1.8% tax matching the screenshot subtotal/tax ratio!
+  const total = Math.max(0, subtotal - discountAmount + shipping + tax);
+
+  // Accessories list (Frequently Bought Together) dynamically resolved from catalog database
+  const accessories = useMemo(() => {
+    if (catalogProducts.length === 0) {
+      return [
+        {
+          id: 'acc-ssd',
+          name: 'Samsung T7 Shield 2TB SSD',
+          brand: 'SAMSUNG',
+          price: 14499,
+          listPrice: 17999,
+          image: ssdImg,
+          rating: 5,
+          reviews: 92,
+          ram: '2TB',
+          storage: 'NVMe',
+        },
+        {
+          id: 'acc-sleeve',
+          name: 'Leather Laptop Sleeve 16"',
+          brand: 'PREMIUM ACCESSORIES' as const,
+          price: 3999,
+          listPrice: 4999,
+          image: sleeveImg,
+          rating: 4,
+          reviews: 43,
+          ram: '16-inch' as const,
+          storage: 'Leather' as const,
+        },
+        {
+          id: 'acc-mat',
+          name: 'Premium Desk Mat Pro',
+          brand: 'PREMIUM ACCESSORIES' as const,
+          price: 1299,
+          listPrice: 1999,
+          image: matImg,
+          rating: 5,
+          reviews: 114,
+          ram: '900x400' as const,
+          storage: 'Felt' as const,
+        },
+      ];
+    }
+
+    // Map first 3 catalog products as accessories
+    return catalogProducts.slice(0, 3).map(prod => {
+      const image = prod.image || prod.imageUrl || (prod.images && prod.images.length > 0 ? (prod.images[0].url || prod.images[0].imageUrl) : null) || guideImg;
+      const ram = prod.specifications?.ram || prod.specifications?.RAM || prod.ram || 'Standard';
+      const storage = prod.specifications?.storage || prod.specifications?.Storage || prod.storage || 'Standard';
+      const listPrice = prod.listPrice || (prod.discount ? Math.round(prod.price / (1 - prod.discount / 100)) : prod.price);
+      const saleBadge = prod.saleBadge || (prod.discount ? `${prod.discount}% OFF` : '');
+
+      return {
+        id: prod.productId || prod.id,
+        name: prod.name,
+        brand: prod.brand || 'Accessories',
+        price: prod.price,
+        listPrice,
+        saleBadge,
+        image,
+        rating: prod.rating || 5,
+        reviews: prod.reviews || 45,
+        ram,
+        storage,
+      };
+    });
+  }, [catalogProducts]);
+
+  // Recommended products list for empty state dynamically resolved from catalog database
+  const recommendations = useMemo(() => {
+    if (catalogProducts.length === 0) {
+      return [
+        {
+          id: 'prod-macbook',
+          name: 'MacBook Pro M3 Max',
+          brand: 'Apple' as const,
+          price: 349900,
+          listPrice: 379900,
+          image: macbookImg,
+          rating: 5,
+          reviews: 124,
+          ram: '64GB' as const,
+          storage: '1TB' as const,
+          saleBadge: 'Sale -8%',
+        },
+      ];
+    }
+
+    // Map catalog products as recommendations
+    return catalogProducts.map(prod => {
+      const image = prod.image || prod.imageUrl || (prod.images && prod.images.length > 0 ? (prod.images[0].url || prod.images[0].imageUrl) : null) || guideImg;
+      const ram = prod.specifications?.ram || prod.specifications?.RAM || prod.ram || 'Standard';
+      const storage = prod.specifications?.storage || prod.specifications?.Storage || prod.storage || 'Standard';
+      const listPrice = prod.listPrice || (prod.discount ? Math.round(prod.price / (1 - prod.discount / 100)) : prod.price);
+      const saleBadge = prod.saleBadge || (prod.discount ? `${prod.discount}% OFF` : '');
+
+      return {
+        id: prod.productId || prod.id,
+        name: prod.name,
+        brand: prod.brand || 'Accessories',
+        price: prod.price,
+        listPrice,
+        saleBadge,
+        image,
+        rating: prod.rating || 5,
+        reviews: prod.reviews || 45,
+        ram,
+        storage,
+      };
+    });
+  }, [catalogProducts]);
+
+  const handleAddAccessory = (acc: typeof accessories[0]) => {
+    dispatch(
+      addToCartBackend({
+        productId: acc.id,
+        quantity: 1,
+      })
+    );
   };
 
   if (isLoading) {
@@ -234,223 +408,6 @@ export const Cart: React.FC = () => {
       </MainLayout>
     );
   }
-
-  const handleRemoveCoupon = () => {
-    dispatch(removeCoupon());
-    toast.success('Coupon removed');
-  };
-
-  const handleCheckout = () => {
-    navigate('/checkout');
-  };
-
-  // Helper helper to enrich the items with custom properties to match screenshots
-  const enrichCartItem = (item: any) => {
-    if (item.id === '1' || item.id === 'prod-macbook') {
-      return {
-        ...item,
-        brand: 'APPLE',
-        listPrice: 399900,
-        saleBadge: '12% OFF',
-        color: 'Silver',
-        specs: 'Silver • 32GB RAM, 1TB SSD Storage',
-        stockStatus: 'In Stock',
-        deliveryStatus: 'Express Delivery by Tomorrow',
-      };
-    }
-    if (item.id === '2' || item.id === 'prod-rog') {
-      return {
-        ...item,
-        brand: 'ASUS ROG',
-        listPrice: 249990,
-        saleBadge: '12% OFF',
-        color: 'Eclipse Gray',
-        specs: 'Eclipse Gray • RTX 4070, 16GB, 1TB',
-        stockStatus: 'In Stock',
-        deliveryStatus: 'Standard Delivery in 3 Days',
-      };
-    }
-    if (item.id === '3' || item.id === 'prod-dell') {
-      return {
-        ...item,
-        brand: 'DELL',
-        listPrice: 219900,
-        saleBadge: '14% OFF',
-        color: 'Platinum',
-        specs: 'Platinum • 32GB RAM, 1TB SSD Storage',
-        stockStatus: 'In Stock',
-        deliveryStatus: 'Express Delivery by Tomorrow',
-      };
-    }
-    // Accessory defaults
-    if (item.id === 'acc-ssd') {
-      return {
-        ...item,
-        brand: 'SAMSUNG',
-        listPrice: 17990,
-        saleBadge: '19% OFF',
-        specs: 'Graphite • Rugged SSD',
-        stockStatus: 'In Stock',
-        deliveryStatus: 'Express Delivery by Tomorrow',
-      };
-    }
-    if (item.id === 'acc-sleeve') {
-      return {
-        ...item,
-        brand: 'PREMIUM ACCESSORIES',
-        listPrice: 4999,
-        saleBadge: '20% OFF',
-        specs: 'Brown • Leather',
-        stockStatus: 'In Stock',
-        deliveryStatus: 'Express Delivery by Tomorrow',
-      };
-    }
-    if (item.id === 'acc-mat') {
-      return {
-        ...item,
-        brand: 'PREMIUM ACCESSORIES',
-        listPrice: 1999,
-        saleBadge: '35% OFF',
-        specs: 'Charcoal Grey • Felt',
-        stockStatus: 'In Stock',
-        deliveryStatus: 'Express Delivery by Tomorrow',
-      };
-    }
-
-    return {
-      ...item,
-      brand: item.brand?.toUpperCase() || 'ACCESSORIES',
-      specs: `${item.ram ? item.ram : ''}${item.storage ? `, ${item.storage}` : ''}`,
-      stockStatus: 'In Stock',
-      deliveryStatus: 'Express Delivery by Tomorrow',
-    };
-  };
-
-  // Pricing calculations (INR)
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const shippingThreshold = 50000; // Free shipping threshold in Rupees
-  const isFreeShipping = subtotal >= shippingThreshold;
-  const shipping = isFreeShipping ? 0 : subtotal > 0 ? 1500 : 0;
-  const tax = subtotal * 0.018; // 1.8% tax matching the screenshot subtotal/tax ratio!
-  const total = Math.max(0, subtotal - discountAmount + shipping + tax);
-
-  // Accessories list (Frequently Bought Together)
-  const accessories = [
-    {
-      id: 'acc-ssd',
-      name: 'Samsung T7 Shield 2TB SSD',
-      brand: 'SAMSUNG',
-      price: 14499,
-      listPrice: 17999,
-      image: ssdImg,
-      rating: 5,
-      reviews: 92,
-      ram: '2TB',
-      storage: 'NVMe',
-    },
-    {
-      id: 'acc-sleeve',
-      name: 'Leather Laptop Sleeve 16"',
-      brand: 'PREMIUM ACCESSORIES',
-      price: 3999,
-      listPrice: 4999,
-      image: sleeveImg,
-      rating: 4,
-      reviews: 43,
-      ram: '16-inch',
-      storage: 'Leather',
-    },
-    {
-      id: 'acc-mat',
-      name: 'Premium Desk Mat Pro',
-      brand: 'PREMIUM ACCESSORIES',
-      price: 1299,
-      listPrice: 1999,
-      image: matImg,
-      rating: 5,
-      reviews: 114,
-      ram: '900x400',
-      storage: 'Felt',
-    },
-  ];
-
-  // Recommended products list for empty state
-  const recommendations = [
-    {
-      id: 'prod-macbook',
-      name: 'MacBook Pro M3 Max',
-      brand: 'Apple' as const,
-      price: 349900,
-      listPrice: 379900,
-      image: macbookImg,
-      rating: 5,
-      reviews: 124,
-      ram: '64GB' as const,
-      storage: '1TB' as const,
-      saleBadge: 'Sale -8%',
-    },
-    {
-      id: 'prod-rog',
-      name: 'ROG Zephyrus G16',
-      brand: 'ASUS' as const,
-      price: 219990,
-      listPrice: 249990,
-      image: rogImg,
-      rating: 4,
-      reviews: 89,
-      ram: '32GB' as const,
-      storage: '2TB' as const,
-      saleBadge: 'Sale -12%',
-    },
-    {
-      id: 'prod-dell',
-      name: 'Dell XPS 15 Plus',
-      brand: 'Dell' as const,
-      price: 189900,
-      listPrice: 219900,
-      image: dellImg,
-      rating: 5,
-      reviews: 215,
-      ram: '16GB' as const,
-      storage: '512GB' as const,
-      saleBadge: 'Sale -13%',
-    },
-    {
-      id: 'prod-air',
-      name: 'MacBook Air M3 Slim',
-      brand: 'Apple' as const,
-      price: 114900,
-      listPrice: 129900,
-      image: guideImg,
-      rating: 5,
-      reviews: 64,
-      ram: '16GB' as const,
-      storage: '512GB' as const,
-      saleBadge: 'Sale -11%',
-    },
-    {
-      id: 'prod-tuf',
-      name: 'ASUS TUF Gaming A15',
-      brand: 'ASUS' as const,
-      price: 104900,
-      listPrice: 119900,
-      image: rogImg,
-      rating: 4,
-      reviews: 43,
-      ram: '16GB' as const,
-      storage: '1TB' as const,
-      saleBadge: 'Sale -12%',
-    },
-  ];
-
-  const handleAddAccessory = (acc: typeof accessories[0]) => {
-    dispatch(
-      addToCartBackend({
-        productId: acc.id,
-        quantity: 1,
-      })
-    );
-  };
 
   return (
     <MainLayout>

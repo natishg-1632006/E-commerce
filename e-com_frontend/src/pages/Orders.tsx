@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useClickOutside } from '../hooks/useClickOutside';
 import { useDispatch } from 'react-redux';
+import type { AppDispatch } from '../store';
 import { MainLayout } from '../layouts/MainLayout';
 import { Price } from '../components/ui/Price';
-import { addToCart } from '../store/cartSlice';
+import { addToCartBackend } from '../store/cartSlice';
 import toast from 'react-hot-toast';
+import { orderService } from '../services/order.service';
+import { productService } from '../services/product.service';
 import {
   Search,
   Sparkles,
@@ -16,98 +20,394 @@ import {
   RefreshCw,
   MapPin,
   CreditCard,
-  SlidersHorizontal,
-  Calendar,
   ShoppingBag,
   ShoppingCart
 } from 'lucide-react';
 
-import rogImg from '../assets/products/rog.jpg';
-import dellImg from '../assets/products/dell.jpg';
 import ssdImg from '../assets/products/samsung_t7_ssd.jpg';
 import sleeveImg from '../assets/products/laptop_sleeve_leather.jpg';
 import matImg from '../assets/products/premium_desk_mat.jpg';
 import guideImg from '../assets/products/guide.jpg';
 
+
+
+const decodeJwtSub = (token: string): string | null => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      window
+        .atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload)?.sub || null;
+  } catch (e) {
+    return null;
+  }
+};
+
+const formatDate = (isoString: string) => {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return isoString;
+  }
+};
+
+const getTrackingSteps = (status: string, statusHistory: any[]) => {
+  const stepsDef = [
+    { label: 'Confirmed', statusKeys: ['CONFIRMED', 'PROCESSING', 'PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'] },
+    { label: 'Packed', statusKeys: ['PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'] },
+    { label: 'Shipped', statusKeys: ['SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'] },
+    { label: 'Out for Delivery', statusKeys: ['OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'] },
+    { label: 'Delivered', statusKeys: ['DELIVERED', 'COMPLETED'] }
+  ];
+
+  const currentUpper = status.toUpperCase();
+
+  return stepsDef.map(step => {
+    const active = step.statusKeys.includes(currentUpper);
+    const histItem = statusHistory.find(h => step.statusKeys.includes(String(h.status).toUpperCase()));
+    const date = histItem ? formatDate(histItem.timestamp) : (active ? 'Completed' : 'Expected soon');
+    return {
+      label: step.label,
+      date,
+      active
+    };
+  });
+};
+
+interface DropdownProps {
+  label: string;
+  selected: string;
+  options: { value: string; label: string }[];
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
+  onSelect: (value: string) => void;
+}
+
+const OrderFilterDropdown: React.FC<DropdownProps> = ({
+  label,
+  selected,
+  options,
+  isOpen,
+  setIsOpen,
+  onSelect
+}) => {
+  const activeLabel = options.find(o => o.value === selected)?.label || selected || label;
+  const ref = useRef<HTMLDivElement | null>(null);
+  
+  useClickOutside(ref, () => {
+    if (isOpen) setIsOpen(false);
+  });
+
+  return (
+    <div ref={ref} className="relative text-left flex-1 sm:flex-none z-20 min-w-0">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`h-11 w-full sm:w-auto px-4 rounded-[10px] border text-slate-700 text-[12px] sm:text-[13px] font-bold transition-all flex items-center justify-between gap-2 shadow-sm focus:ring-2 focus:ring-blue-500/10 focus:border-blue-400 outline-none cursor-pointer ${
+          isOpen
+            ? 'bg-slate-50/80 border-blue-600 ring-4 ring-blue-600/10'
+            : 'bg-white hover:bg-slate-50/60 border-slate-200 hover:border-slate-350 shadow-slate-100/40'
+        }`}
+      >
+        <span className="truncate">{label}: {activeLabel}</span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div
+          className="absolute left-0 sm:left-auto sm:right-0 mt-2 z-30 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 w-full sm:w-56 flex flex-col animate-fadeIn"
+        >
+          {options.map(option => (
+            <button
+              key={option.value}
+              onClick={() => {
+                onSelect(option.value);
+                setIsOpen(false);
+              }}
+              className={`w-full text-left px-3.5 py-2.5 text-[11px] sm:text-[12px] font-bold transition-colors hover:bg-slate-50 flex items-center justify-between border-none bg-transparent cursor-pointer ${
+                selected === option.value ? 'text-blue-600 bg-blue-50/30' : 'text-slate-655'
+              }`}
+            >
+              <span>{option.label}</span>
+              {selected === option.value && <Check className="w-3.5 h-3.5 text-blue-600" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const Orders: React.FC = () => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
 
   // State Management
-  const [showEmptyState, setShowEmptyState] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('All Orders');
   const [expandedMobileOrders, setExpandedMobileOrders] = useState<Record<string, boolean>>({});
+  const [orders, setOrders] = useState<any[]>([]);
+  const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
+  // Dropdown states
+  const [selectedStatus, setSelectedStatus] = useState('ALL');
+  const [selectedDate, setSelectedDate] = useState('ALL');
+  const [selectedSort, setSelectedSort] = useState('NEWEST');
 
-  // Trigger simulated loading skeleton state on tab filter/mount transitions
+  const [isOpenStatus, setIsOpenStatus] = useState(false);
+  const [isOpenDate, setIsOpenDate] = useState(false);
+  const [isOpenSort, setIsOpenSort] = useState(false);
+
+  // Load real orders from backend
   useEffect(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [activeTab, searchQuery]);
+    const fetchOrders = async () => {
+      setIsLoading(true);
+      try {
+        const token = localStorage.getItem('natcart_access_token') || localStorage.getItem('natcart_token');
+        if (!token) {
+          navigate('/login');
+          return;
+        }
+        const userId = decodeJwtSub(token);
+        if (!userId) {
+          navigate('/login');
+          return;
+        }
 
-  // Mock Active Orders Data
-  const ordersData = [
-    {
-      id: 'NC-882190',
-      placedDate: 'Oct 24, 2024',
-      deliveredDate: null,
-      status: 'In Transit',
-      quantity: 1,
-      price: 119900,
-      name: 'NatCart AirPhone 15 Pro Max',
-      specs: 'Titanium Gray • 256GB',
-      image: dellImg, // Phone equivalent
-      trackingSteps: [
-        { label: 'Confirmed', date: 'Oct 24, 2024, 10:00 AM', active: true },
-        { label: 'Packed', date: 'Oct 24, 2024, 2:30 PM', active: true },
-        { label: 'Shipped', date: 'Oct 25, 2024, 9:15 AM', active: true },
-        { label: 'Out for Delivery', date: 'Expected Oct 27', active: false },
-        { label: 'Delivered', date: 'Expected Oct 28', active: false }
-      ],
-      shippingAddress: {
-        name: 'Alex Mercer',
-        address: '1200 Innovation Way, Suite 400',
-        cityStateZip: 'Palo Alto, CA 94304'
-      },
-      paymentSummary: {
-        subtotal: 119900,
-        shipping: 0,
-        total: 119900
+        // Fetch user orders
+        const userOrders = await orderService.getOrdersByUser(userId);
+        setOrders(userOrders || []);
+
+        // Also fetch catalog products to resolve potential recommendations dynamically
+        const res = await productService.getProducts({ limit: 100 });
+        const prodData = res.data || res.products || (Array.isArray(res) ? res : []);
+        setCatalogProducts(prodData || []);
+
+      } catch (err: any) {
+        console.error('Error loading user orders:', err);
+        const errMsg = err.response?.data?.message || err.message || 'Failed to load orders.';
+        toast.error(errMsg);
+      } finally {
+        setIsLoading(false);
       }
-    },
-    {
-      id: 'NC-772154',
-      placedDate: 'Oct 14, 2024',
-      deliveredDate: 'Oct 18, 2024',
-      status: 'Delivered',
-      quantity: 1,
-      price: 34900,
-      name: 'NatSound Elite Studio H1',
-      specs: 'Matte Black • ANC Edition',
-      image: rogImg, // Headphones equivalent
-      trackingSteps: [
-        { label: 'Confirmed', date: 'Oct 14, 2024, 8:00 AM', active: true },
-        { label: 'Packed', date: 'Oct 14, 2024, 11:30 AM', active: true },
-        { label: 'Shipped', date: 'Oct 15, 2024, 4:00 PM', active: true },
-        { label: 'Out for Delivery', date: 'Oct 18, 2024, 9:00 AM', active: true },
-        { label: 'Delivered', date: 'Oct 18, 2024, 3:30 PM', active: true }
-      ],
-      shippingAddress: {
-        name: 'Alex Mercer',
-        address: '1200 Innovation Way, Suite 400',
-        cityStateZip: 'Palo Alto, CA 94304'
-      },
-      paymentSummary: {
-        subtotal: 34900,
+    };
+    fetchOrders();
+  }, [navigate]);
+
+  // Tab configurations
+  const tabs = ['All Orders', 'In Transit', 'Delivered'];
+
+  // Toggle package details expansion on mobile
+  const toggleMobileOrderExpansion = (orderId: string) => {
+    setExpandedMobileOrders(prev => ({
+      ...prev,
+      [orderId]: !prev[orderId]
+    }));
+  };
+
+
+
+  // Add accessory to Redux cart
+  const handleAddAccessoryToCart = (acc: any) => {
+    dispatch(
+      addToCartBackend({
+        productId: acc.id,
+        quantity: 1,
+      })
+    );
+  };
+
+  // Format all backend orders to canonical list structures
+  const ordersList = useMemo(() => {
+    return orders.map(ord => {
+      const items = ord.items || [];
+      const mainItem = items[0] || {};
+      
+      const name = mainItem.name
+        ? `${mainItem.name}${items.length > 1 ? ` + ${items.length - 1} more` : ''}`
+        : 'Tech Purchase';
+
+      const image = mainItem.image || mainItem.imageUrl || guideImg;
+      const brand = mainItem.brand || 'Premium';
+      const ram = mainItem.specifications?.ram || mainItem.specifications?.RAM || '';
+      const storage = mainItem.specifications?.storage || mainItem.specifications?.Storage || '';
+      const specs = ram && storage ? `${brand} • ${ram}, ${storage}` : `${brand} • Standard`;
+
+      const placedDate = formatDate(ord.createdAt);
+      const trackingSteps = getTrackingSteps(ord.orderStatus || 'Pending Payment', ord.statusHistory || []);
+
+      const shippingAddress = {
+        name: ord.shippingAddress?.fullName || 'Customer',
+        address: ord.shippingAddress?.address || 'Standard Shipping',
+        cityStateZip: `${ord.shippingAddress?.city || ''}, ${ord.shippingAddress?.state || ''} - ${ord.shippingAddress?.pincode || ''}`
+      };
+
+      const paymentSummary = {
+        subtotal: ord.totalAmount,
         shipping: 0,
-        total: 34900
+        total: ord.totalAmount
+      };
+
+      let displayStatus = ord.orderStatus || 'Pending';
+      if (['PROCESSING', 'PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY'].includes(String(ord.orderStatus).toUpperCase())) {
+        displayStatus = 'In Transit';
       }
+
+      return {
+        id: ord.orderId,
+        placedDate,
+        deliveredDate: ord.orderStatus === 'Delivered' ? formatDate(ord.updatedAt) : null,
+        status: displayStatus,
+        quantity: items.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0),
+        price: ord.totalAmount,
+        name,
+        specs,
+        image,
+        trackingSteps,
+        shippingAddress,
+        paymentSummary,
+        rawItems: items,
+        paymentMethod: ord.paymentMethod || 'Card',
+        paymentStatus: ord.paymentStatus || 'Pending'
+      };
+    });
+  }, [orders]);
+
+  const ordMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    orders.forEach(o => { map[o.orderId] = o; });
+    return map;
+  }, [orders]);
+
+  // Filter and sort logic
+  const filteredOrders = useMemo(() => {
+    let result = [...ordersList];
+
+    // Search query match
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(order =>
+        order.id.toLowerCase().includes(q) ||
+        order.name.toLowerCase().includes(q)
+      );
     }
-  ];
+
+    // Horizontal Tab filter (All, In Transit, Delivered)
+    if (activeTab === 'In Transit') {
+      result = result.filter(order => order.status === 'In Transit');
+    } else if (activeTab === 'Delivered') {
+      result = result.filter(order => order.status === 'Delivered');
+    }
+
+    // Dropdown Status Filter
+    if (selectedStatus !== 'ALL') {
+      const matchStatus = selectedStatus.replace(/_/g, ' ').toUpperCase();
+      result = result.filter(order => {
+        const rawOrd = ordMap[order.id];
+        if (!rawOrd) return false;
+        const rawStatusUpper = String(rawOrd.orderStatus || '').toUpperCase();
+        
+        if (matchStatus === 'PENDING PAYMENT') {
+          return rawStatusUpper === 'PENDING PAYMENT' || rawStatusUpper === 'PENDING';
+        }
+        if (matchStatus === 'IN TRANSIT') {
+          return ['PROCESSING', 'PACKED', 'SHIPPED', 'OUT FOR DELIVERY', 'OUT_FOR_DELIVERY', 'OUT_FOR_DELIVERY'].includes(rawStatusUpper);
+        }
+        if (matchStatus === 'DELIVERED') {
+          return rawStatusUpper === 'DELIVERED';
+        }
+        if (matchStatus === 'CANCELLED') {
+          return rawStatusUpper === 'CANCELLED';
+        }
+        if (matchStatus === 'PAYMENT_FAILED') {
+          return rawStatusUpper === 'PAYMENT_FAILED' || rawStatusUpper === 'FAILED';
+        }
+        return rawStatusUpper === matchStatus;
+      });
+    }
+
+    // Dropdown Date Filter
+    if (selectedDate !== 'ALL') {
+      const now = new Date();
+      result = result.filter(order => {
+        if (!order.id) return false;
+        const rawOrd = ordMap[order.id];
+        if (!rawOrd || !rawOrd.createdAt) return false;
+        const placed = new Date(rawOrd.createdAt);
+        const diffMs = now.getTime() - placed.getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+        if (selectedDate === '30_DAYS') return diffDays <= 30;
+        if (selectedDate === '3_MONTHS') return diffDays <= 90;
+        if (selectedDate === '6_MONTHS') return diffDays <= 180;
+        if (selectedDate === 'THIS_YEAR') return placed.getFullYear() === now.getFullYear();
+        return true;
+      });
+    }
+
+    // Sorting
+    result.sort((a, b) => {
+      const rawA = ordMap[a.id];
+      const rawB = ordMap[b.id];
+      const dateA = rawA && rawA.createdAt ? new Date(rawA.createdAt).getTime() : 0;
+      const dateB = rawB && rawB.createdAt ? new Date(rawB.createdAt).getTime() : 0;
+
+      if (selectedSort === 'NEWEST') return dateB - dateA;
+      if (selectedSort === 'OLDEST') return dateA - dateB;
+      if (selectedSort === 'PRICE_DESC') return b.price - a.price;
+      if (selectedSort === 'PRICE_ASC') return a.price - b.price;
+      return 0;
+    });
+
+    return result;
+  }, [ordersList, orders, ordMap, searchQuery, activeTab, selectedStatus, selectedDate, selectedSort]);
+
+  // Accessories list (Frequently Bought Together) dynamically resolved from catalog database
+  const accessories = useMemo(() => {
+    const defaultAccs = [
+      { id: 'acc-sleeve', name: 'ProLeather Shield 14"', price: 8900, listPrice: 11900, image: sleeveImg, specs: 'Premium Leather' },
+      { id: 'acc-dock', name: 'CoreLink Multi-Dock', price: 14900, listPrice: 17900, image: ssdImg, specs: '10-in-1 Hub' },
+      { id: 'acc-mat', name: 'TypeFlow Mechanical Air', price: 19900, listPrice: 24900, image: matImg, specs: 'Wireless Mechanical' },
+      { id: 'acc-kit', name: 'NanoClear Display Kit', price: 2900, listPrice: 3900, image: guideImg, specs: 'Microfiber & Spray' }
+    ];
+
+    if (catalogProducts.length === 0) return defaultAccs;
+
+    return catalogProducts.slice(0, 4).map((prod, idx) => {
+      const def = defaultAccs[idx] || defaultAccs[0];
+      const image = prod.image || prod.imageUrl || (prod.images && prod.images.length > 0 ? (prod.images[0].url || prod.images[0].imageUrl) : null) || def.image;
+      const ram = prod.specifications?.ram || prod.specifications?.RAM || prod.ram || 'Standard';
+      const storage = prod.specifications?.storage || prod.specifications?.Storage || prod.storage || 'Standard';
+      const listPrice = prod.listPrice || (prod.discount ? Math.round(prod.price / (1 - prod.discount / 100)) : prod.price);
+
+      return {
+        id: prod.productId || prod.id,
+        name: prod.name,
+        price: prod.price,
+        listPrice,
+        image,
+        specs: ram && storage ? `${ram}, ${storage}` : (ram || storage || def.specs),
+      };
+    });
+  }, [catalogProducts]);
+
+  // Computed status stats widgets values
+  const statsWidget = useMemo(() => {
+    const total = ordersList.length;
+    const delivered = ordersList.filter(o => o.status === 'Delivered').length;
+    const pending = total - delivered;
+    return { total, delivered, pending };
+  }, [ordersList]);
 
   if (isLoading) {
     return (
@@ -183,49 +483,29 @@ export const Orders: React.FC = () => {
     );
   }
 
-  // Accessories Slider Data
-  const accessories = [
-    { id: 'acc-sleeve', name: 'ProLeather Shield 14"', price: 8900, listPrice: 11900, image: sleeveImg, specs: 'Premium Leather' },
-    { id: 'acc-dock', name: 'CoreLink Multi-Dock', price: 14900, listPrice: 17900, image: ssdImg, specs: '10-in-1 Hub' },
-    { id: 'acc-mat', name: 'TypeFlow Mechanical Air', price: 19900, listPrice: 24900, image: matImg, specs: 'Wireless Mechanical' },
-    { id: 'acc-kit', name: 'NanoClear Display Kit', price: 2900, listPrice: 3900, image: guideImg, specs: 'Microfiber & Spray' }
+  const statusOptions = [
+    { value: 'ALL', label: 'All Statuses' },
+    { value: 'PENDING_PAYMENT', label: 'Pending Payment' },
+    { value: 'IN_TRANSIT', label: 'In Transit' },
+    { value: 'DELIVERED', label: 'Delivered' },
+    { value: 'CANCELLED', label: 'Cancelled' },
+    { value: 'PAYMENT_FAILED', label: 'Payment Failed' }
   ];
 
-  // Tab configurations
-  const tabs = ['All Orders', 'In Transit', 'Delivered'];
+  const dateOptions = [
+    { value: 'ALL', label: 'All Time' },
+    { value: '30_DAYS', label: 'Last 30 Days' },
+    { value: '3_MONTHS', label: 'Last 3 Months' },
+    { value: '6_MONTHS', label: 'Last 6 Months' },
+    { value: 'THIS_YEAR', label: 'This Year' }
+  ];
 
-  // Toggle package details expansion on mobile
-  const toggleMobileOrderExpansion = (orderId: string) => {
-    setExpandedMobileOrders(prev => ({
-      ...prev,
-      [orderId]: !prev[orderId]
-    }));
-  };
-
-  // Add accessory to Redux cart
-  const handleAddAccessoryToCart = (acc: typeof accessories[0]) => {
-    dispatch(
-      addToCart({
-        id: acc.id,
-        name: acc.name,
-        brand: 'ACCESSORY',
-        price: acc.price,
-        image: acc.image,
-        ram: 'Standard',
-        storage: 'Standard'
-      })
-    );
-  };
-
-  // Filter logic
-  const filteredOrders = ordersData.filter(order => {
-    const matchesSearch =
-      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.name.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (activeTab === 'All Orders') return matchesSearch;
-    return matchesSearch && order.status === activeTab;
-  });
+  const sortOptions = [
+    { value: 'NEWEST', label: 'Newest First' },
+    { value: 'OLDEST', label: 'Oldest First' },
+    { value: 'PRICE_DESC', label: 'Price: High to Low' },
+    { value: 'PRICE_ASC', label: 'Price: Low to High' }
+  ];
 
   return (
     <MainLayout>
@@ -240,21 +520,7 @@ export const Orders: React.FC = () => {
           <span className="text-slate-900">My Orders</span>
         </nav>
 
-        {/* Demo Switch Controller */}
-        <div className="flex items-center justify-between bg-slate-100 border border-slate-200/80 p-3 rounded-2xl select-none">
-          <div className="flex flex-col text-left space-y-0.5">
-            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Dashboard View Mode</span>
-            <span className="text-xs font-bold text-slate-700">Toggle between empty and loaded orders dashboard layouts</span>
-          </div>
-          <button
-            onClick={() => setShowEmptyState(!showEmptyState)}
-            className="px-4 py-1.5 rounded-full text-[10px] font-black tracking-wider uppercase bg-blue-600 hover:bg-blue-700 text-white shadow transition-all cursor-pointer active:scale-95"
-          >
-            {showEmptyState ? 'Show Loaded State' : 'Show Empty State'}
-          </button>
-        </div>
-
-        {!showEmptyState ? (
+        {ordersList.length > 0 ? (
           /* Active Loaded State Layout */
           <>
             {/* Desktop-only Header Dashboard Row */}
@@ -268,23 +534,23 @@ export const Orders: React.FC = () => {
               <div className="flex items-center space-x-3.5">
                 <div className="bg-white border border-slate-200/60 rounded-2xl px-5 py-2.5 flex flex-col items-start min-w-[80px] shadow-sm select-none">
                   <span className="text-[9px] font-black text-slate-455 uppercase tracking-wider">Total</span>
-                  <span className="text-base font-black text-blue-600 mt-0.5">24</span>
+                  <span className="text-base font-black text-blue-600 mt-0.5">{statsWidget.total}</span>
                 </div>
                 <div className="bg-white border border-slate-200/60 rounded-2xl px-5 py-2.5 flex flex-col items-start min-w-[80px] shadow-sm select-none">
                   <span className="text-[9px] font-black text-slate-455 uppercase tracking-wider">Delivered</span>
-                  <span className="text-base font-black text-green-650 mt-0.5">21</span>
+                  <span className="text-base font-black text-green-650 mt-0.5">{statsWidget.delivered}</span>
                 </div>
                 <div className="bg-white border border-slate-200/60 rounded-2xl px-5 py-2.5 flex flex-col items-start min-w-[80px] shadow-sm select-none">
                   <span className="text-[9px] font-black text-slate-455 uppercase tracking-wider">Pending</span>
-                  <span className="text-base font-black text-blue-600 mt-0.5">3</span>
+                  <span className="text-base font-black text-blue-600 mt-0.5">{statsWidget.pending}</span>
                 </div>
               </div>
             </div>
 
-            {/* Filters Navigation and Search Row */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 select-none">
+            {/* Filters Navigation Row */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none">
               {/* Horizontal Tabs selector */}
-              <div className="flex items-center space-x-2.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
+              <div className="flex items-center space-x-2.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
                 {tabs.map((tab) => (
                   <button
                     key={tab}
@@ -300,30 +566,59 @@ export const Orders: React.FC = () => {
                   </button>
                 ))}
               </div>
+            </div>
 
-              {/* Right filters inputs */}
-              <div className="flex items-center space-x-2.5 w-full md:w-auto">
-                <div className="relative flex-1 md:w-72">
-                  <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search Order ID or Product Name"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full h-10 border border-slate-200 rounded-xl pl-10 pr-4 text-xs font-semibold text-slate-700 focus:border-blue-600 outline-none transition-colors bg-white shadow-sm"
-                  />
-                </div>
+            {/* Search and Dropdowns Filter Row */}
+            <div className="bg-slate-50/45 border border-slate-200/50 rounded-[20px] p-3 flex flex-col md:flex-row md:items-center justify-between gap-3.5 select-none">
+              {/* Search input container */}
+              <div className="relative w-full md:w-80 flex-shrink-0">
+                <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search Order ID or Product Name"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-11 border border-slate-200 rounded-[10px] pl-10 pr-4 text-[13px] font-bold text-slate-700 focus:ring-2 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all bg-white shadow-sm"
+                />
+              </div>
 
-                {/* Status Options & Date Filters */}
-                <button className="h-10 border border-slate-200 bg-white rounded-xl px-4 flex items-center space-x-2 text-xs font-black text-slate-750 hover:bg-slate-50 cursor-pointer shadow-sm">
-                  <SlidersHorizontal className="w-4 h-4 text-slate-400" />
-                  <span className="hidden sm:inline">Status</span>
-                </button>
+              {/* Dropdowns container */}
+              <div className="flex flex-row items-center gap-3 w-full md:w-auto">
+                <OrderFilterDropdown
+                  label="Status"
+                  selected={selectedStatus}
+                  options={statusOptions}
+                  isOpen={isOpenStatus}
+                  setIsOpen={(open) => {
+                    setIsOpenStatus(open);
+                    if (open) { setIsOpenDate(false); setIsOpenSort(false); }
+                  }}
+                  onSelect={setSelectedStatus}
+                />
 
-                <button className="h-10 border border-slate-200 bg-white rounded-xl px-4 flex items-center space-x-2 text-xs font-black text-slate-750 hover:bg-slate-50 cursor-pointer shadow-sm">
-                  <Calendar className="w-4 h-4 text-slate-400" />
-                  <span className="hidden sm:inline">Last 3 Months</span>
-                </button>
+                <OrderFilterDropdown
+                  label="Date"
+                  selected={selectedDate}
+                  options={dateOptions}
+                  isOpen={isOpenDate}
+                  setIsOpen={(open) => {
+                    setIsOpenDate(open);
+                    if (open) { setIsOpenStatus(false); setIsOpenSort(false); }
+                  }}
+                  onSelect={setSelectedDate}
+                />
+
+                <OrderFilterDropdown
+                  label="Sort"
+                  selected={selectedSort}
+                  options={sortOptions}
+                  isOpen={isOpenSort}
+                  setIsOpen={(open) => {
+                    setIsOpenSort(open);
+                    if (open) { setIsOpenStatus(false); setIsOpenDate(false); }
+                  }}
+                  onSelect={setSelectedSort}
+                />
               </div>
             </div>
 
@@ -476,23 +771,24 @@ export const Orders: React.FC = () => {
                         <div className="flex items-center space-x-3">
                           {order.status === 'Delivered' ? (
                             <>
-                              <button className="h-9 px-5 rounded-full border border-slate-200 text-[10px] font-black text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer active:scale-95">
+                              <button
+                                onClick={() => navigate(`/orders/${order.id}`)}
+                                className="h-9 px-5 rounded-full border border-slate-200 text-[10px] font-black text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer active:scale-95"
+                              >
                                 View Details
                               </button>
                               <button
                                 onClick={() => {
-                                  dispatch(
-                                    addToCart({
-                                      id: order.id,
-                                      name: order.name,
-                                      brand: 'REORDER',
-                                      price: order.price,
-                                      image: order.image,
-                                      ram: 'Standard',
-                                      storage: 'Standard'
-                                    })
-                                  );
-                                  toast.success(`${order.name} added to cart!`, { icon: '🛒' });
+                                  if (order.rawItems && order.rawItems.length > 0) {
+                                    order.rawItems.forEach((it: any) => {
+                                      dispatch(
+                                        addToCartBackend({
+                                          productId: it.productId,
+                                          quantity: it.quantity,
+                                        })
+                                      );
+                                    });
+                                  }
                                 }}
                                 className="h-9 px-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center space-x-1.5 shadow transition-colors cursor-pointer active:scale-95"
                               >
@@ -502,11 +798,11 @@ export const Orders: React.FC = () => {
                             </>
                           ) : (
                             <>
-                              <button className="h-9 px-5 rounded-full border border-slate-200 text-[10px] font-black text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer active:scale-95">
+                              <button
+                                onClick={() => navigate(`/orders/${order.id}`)}
+                                className="h-9 px-5 rounded-full border border-slate-200 text-[10px] font-black text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer active:scale-95"
+                              >
                                 Details
-                              </button>
-                              <button className="h-9 px-6 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow transition-colors cursor-pointer active:scale-95">
-                                Track Live
                               </button>
                             </>
                           )}
@@ -550,7 +846,6 @@ export const Orders: React.FC = () => {
                           <Price value={order.price} className="text-xs font-black text-slate-900 mt-1.5 block" />
                         </div>
                       </div>
-
                       {/* Expandable Package Tracker */}
                       <div className="border-t border-b border-slate-100/80 py-2.5">
                         <button
@@ -568,11 +863,9 @@ export const Orders: React.FC = () => {
                         {expandedMobileOrders[order.id] && (
                           <div className="mt-4 pl-3 space-y-6 relative">
                             {order.trackingSteps.map((step, idx) => {
-                              // Check if we should color the line leading to the next step
                               const showActiveLine = step.active && idx < order.trackingSteps.length - 1 && order.trackingSteps[idx + 1].active;
                               return (
                                 <div key={idx} className="flex items-start space-x-3.5 relative">
-                                  {/* Connecting line segment underneath the circle node */}
                                   {idx < order.trackingSteps.length - 1 && (
                                     <div
                                       className={cn(
@@ -582,7 +875,6 @@ export const Orders: React.FC = () => {
                                     />
                                   )}
                                   
-                                  {/* Circle Node Marker */}
                                   <div
                                     className={cn(
                                       "w-5 h-5 rounded-full border flex items-center justify-center z-10 transition-colors duration-300 flex-shrink-0",
@@ -615,33 +907,34 @@ export const Orders: React.FC = () => {
                           <>
                             <button
                               onClick={() => {
-                                dispatch(
-                                  addToCart({
-                                    id: order.id,
-                                    name: order.name,
-                                    brand: 'REORDER',
-                                    price: order.price,
-                                    image: order.image,
-                                    ram: 'Standard',
-                                    storage: 'Standard'
-                                  })
-                                );
-                                toast.success(`${order.name} added to cart!`, { icon: '🛒' });
+                                if (order.rawItems && order.rawItems.length > 0) {
+                                  order.rawItems.forEach((it: any) => {
+                                    dispatch(
+                                      addToCartBackend({
+                                        productId: it.productId,
+                                        quantity: it.quantity,
+                                      })
+                                    );
+                                  });
+                                }
                               }}
                               className="flex-grow h-12 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center shadow cursor-pointer active:scale-95 border-none"
                             >
                               BUY AGAIN
                             </button>
-                            <button className="h-12 px-6 rounded-2xl border border-slate-200/85 bg-white text-xs font-black text-slate-750 hover:bg-slate-50 transition-colors cursor-pointer active:scale-95 shadow-sm">
-                              Return
+                            <button
+                              onClick={() => navigate(`/orders/${order.id}`)}
+                              className="h-12 px-6 rounded-2xl border border-slate-200/85 bg-white text-xs font-black text-slate-750 hover:bg-slate-50 transition-colors cursor-pointer active:scale-95 shadow-sm"
+                            >
+                              Details
                             </button>
                           </>
                         ) : (
                           <>
-                            <button className="flex-grow h-12 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center shadow cursor-pointer active:scale-95 border-none">
-                              TRACK LIVE
-                            </button>
-                            <button className="h-12 px-6 rounded-2xl border border-slate-200/85 bg-white text-xs font-black text-slate-755 hover:bg-slate-50 transition-colors cursor-pointer active:scale-95 shadow-sm">
+                            <button
+                              onClick={() => navigate(`/orders/${order.id}`)}
+                              className="flex-grow h-12 rounded-2xl border border-slate-200/85 bg-white text-xs font-black text-slate-755 hover:bg-slate-50 transition-colors cursor-pointer active:scale-95 shadow-sm"
+                            >
                               Details
                             </button>
                           </>

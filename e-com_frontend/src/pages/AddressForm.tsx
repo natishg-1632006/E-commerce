@@ -12,19 +12,9 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import toast from 'react-hot-toast';
+import { addressService } from '../services/address.service';
 
-interface Address {
-  id: string;
-  label: string;
-  fullName: string;
-  addressLine1: string;
-  addressLine2: string;
-  city: string;
-  stateName: string;
-  pincode: string;
-  phone: string;
-  isDefault: boolean;
-}
+
 
 export const AddressForm: React.FC = () => {
   const dispatch = useDispatch();
@@ -41,47 +31,37 @@ export const AddressForm: React.FC = () => {
   const [addrStateName, setAddrStateName] = useState('');
   const [addrPincode, setAddrPincode] = useState('');
   const [addrPhone, setAddrPhone] = useState('');
-  const [addrIsDefault, setAddrIsDefault] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [addresses, setAddresses] = useState<Address[]>([]);
 
-  // Load existing addresses list and populate if in Edit mode
+
+  // Load existing profile address from backend
   useEffect(() => {
-    const savedAddr = localStorage.getItem('natcart_addresses');
-    let loadedAddresses: Address[] = [];
-    
-    if (savedAddr) {
-      loadedAddresses = JSON.parse(savedAddr);
-      setAddresses(loadedAddresses);
-    }
-
-    if (id) {
-      // Edit Mode
-      const matched = loadedAddresses.find((a) => a.id === id);
-      if (matched) {
-        setAddrLabel(matched.label);
-        setAddrFullName(matched.fullName);
-        setAddrLine1(matched.addressLine1);
-        setAddrLine2(matched.addressLine2);
-        setAddrCity(matched.city);
-        setAddrStateName(matched.stateName);
-        setAddrPincode(matched.pincode);
-        setAddrPhone(matched.phone);
-        setAddrIsDefault(matched.isDefault);
-      } else {
-        toast.error('Address not found!');
-        navigate('/profile');
+    const loadAddress = async () => {
+      try {
+        const addr = await addressService.getAddress();
+        if (addr) {
+          setAddrFullName(addr.fullName || '');
+          setAddrPhone(addr.phone || '');
+          const parts = (addr.address || '').split(', ');
+          if (parts.length > 0) setAddrLine1(parts[0]);
+          if (parts.length > 1) setAddrLine2(parts.slice(1).join(', '));
+          setAddrCity(addr.city || '');
+          setAddrStateName(addr.state || '');
+          setAddrPincode(addr.pincode || '');
+        } else {
+          // If empty add mode
+          setAddrFullName(profile?.fullName || '');
+          setAddrPhone(profile?.phone || '');
+        }
+      } catch (err) {
+        console.error('Error loading profile address:', err);
       }
-    } else {
-      // Add Mode
-      setAddrFullName(profile?.fullName || '');
-      setAddrPhone(profile?.phone || '');
-      setAddrIsDefault(loadedAddresses.length === 0); // default if first address
-    }
-  }, [id, profile, navigate]);
+    };
+    loadAddress();
+  }, [profile]);
 
   // Handle Save Address Form
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
 
@@ -107,44 +87,42 @@ export const AddressForm: React.FC = () => {
 
     setErrors({});
 
-    let updatedAddresses = [...addresses];
-
-    // If set as default, clear other default states
-    if (addrIsDefault) {
-      updatedAddresses = updatedAddresses.map((a) => ({ ...a, isDefault: false }));
-    }
-
-    const addressData: Address = {
-      id: id ? id : `addr-${Date.now()}`,
-      label: addrLabel,
+    const addressData = {
       fullName: addrFullName,
-      addressLine1: addrLine1,
-      addressLine2: addrLine2,
-      city: addrCity,
-      stateName: addrStateName,
-      pincode: pinDigits,
       phone: addrPhone,
-      isDefault: addrIsDefault || addresses.length === 0, // always default if only address
+      address: `${addrLine1}${addrLine2 ? ', ' : ''}${addrLine2}`,
+      city: addrCity,
+      state: addrStateName,
+      pincode: pinDigits,
     };
 
-    if (id) {
-      // Update
-      updatedAddresses = updatedAddresses.map((a) => (a.id === id ? addressData : a));
-      toast.success('Address updated successfully!');
-    } else {
-      // Create
-      updatedAddresses.push(addressData);
-      toast.success('New address added successfully!');
+    try {
+      await addressService.saveAddress(addressData);
+      if (profile) {
+        // Sync default address to redux profile as a serialized JSON string to maintain original component schema compatibility
+        dispatch(setProfile({
+          ...profile,
+          address: JSON.stringify({
+            id: 'addr-profile',
+            label: addrLabel,
+            fullName: addrFullName,
+            addressLine1: addrLine1,
+            addressLine2: addrLine2,
+            city: addrCity,
+            stateName: addrStateName,
+            pincode: pinDigits,
+            phone: addrPhone,
+            isDefault: true,
+          }),
+        }));
+      }
+      toast.success('Address saved successfully!');
+      navigate('/profile');
+    } catch (err: any) {
+      console.error('Error saving address:', err);
+      const errMsg = err.response?.data?.message || err.message || 'Failed to save address.';
+      toast.error(errMsg);
     }
-
-    // Sync default address to redux profile
-    const defaultAddress = updatedAddresses.find((a) => a.isDefault);
-    if (defaultAddress && profile) {
-      dispatch(setProfile({ ...profile, address: JSON.stringify(defaultAddress) }));
-    }
-
-    localStorage.setItem('natcart_addresses', JSON.stringify(updatedAddresses));
-    navigate('/profile');
   };
 
   return (
@@ -353,9 +331,8 @@ export const AddressForm: React.FC = () => {
               <input
                 type="checkbox"
                 id="addr-default-check"
-                checked={addrIsDefault}
-                onChange={(e) => setAddrIsDefault(e.target.checked)}
-                disabled={addresses.length === 0}
+                checked={true}
+                disabled={true}
                 className="w-4.5 h-4.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500 focus:ring-2 cursor-pointer disabled:cursor-not-allowed"
               />
               <label htmlFor="addr-default-check" className="text-xs font-bold text-slate-700 cursor-pointer disabled:cursor-not-allowed">
