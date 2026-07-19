@@ -16,13 +16,15 @@ import {
   ChevronRight,
   Smartphone,
   Building2,
-  AlertCircle
+  AlertCircle,
+  Tag
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import toast from 'react-hot-toast';
 import { addressService } from '../services/address.service';
 import { paymentService } from '../services/payment.service';
 import { orderService } from '../services/order.service';
+import { couponService } from '../services/coupon.service';
 
 import guideImg from '../assets/products/guide.jpg';
 
@@ -31,6 +33,11 @@ export const Checkout: React.FC = () => {
   const navigate = useNavigate();
   const { items, discountAmount } = useSelector((state: RootState) => state.cart);
   const { profile } = useSelector((state: RootState) => state.auth);
+
+  // Calculations at the top to be in scope for hooks and state
+  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const shipping = 0; // Standard shipping is free
+  const tax = subtotal * 0.018; // 1.8% tax rate
 
   // Stepper state: 2 = Checkout (Shipping/Delivery), 3 = Payment, 4 = Confirmation
   const [activeStep, setActiveStep] = useState(2);
@@ -103,12 +110,77 @@ export const Checkout: React.FC = () => {
   // Random order details generated on payment completion
   const [orderId, setOrderId] = useState('');
 
+  // Coupon state
+  const [couponCodeInput, setCouponCodeInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState('');
+  const [couponSuccess, setCouponSuccess] = useState('');
+
+  const couponApplied = !!appliedCoupon;
+
   // Redirect if cart is empty and we aren't in confirmation screen
   useEffect(() => {
     if (items.length === 0 && activeStep !== 4) {
       navigate('/cart');
     }
   }, [items, activeStep, navigate]);
+
+  // Revalidate coupon on subtotal changes (triggered by cart quantity changes or items removal)
+  useEffect(() => {
+    if (!appliedCoupon) return;
+
+    const revalidate = async () => {
+      try {
+        const result = await couponService.validateCoupon(appliedCoupon.couponCode, subtotal);
+        if (result.valid) {
+          setAppliedCoupon(result);
+        } else {
+          setAppliedCoupon(null);
+          setCouponError('Coupon removed because your cart no longer satisfies the coupon conditions.');
+          setCouponSuccess('');
+        }
+      } catch (err) {
+        setAppliedCoupon(null);
+        setCouponError('Coupon removed because your cart no longer satisfies the coupon conditions.');
+        setCouponSuccess('');
+      }
+    };
+
+    revalidate();
+  }, [subtotal]);
+
+  const handleApplyCoupon = async () => {
+    if (!couponCodeInput.trim() || couponApplied || couponLoading) return;
+
+    setCouponLoading(true);
+    setCouponError('');
+    setCouponSuccess('');
+
+    try {
+      const result = await couponService.validateCoupon(couponCodeInput.trim(), subtotal);
+      if (result.valid) {
+        setAppliedCoupon(result);
+        setCouponSuccess('Coupon Applied Successfully');
+        setCouponCodeInput('');
+      } else {
+        setCouponError('Invalid Coupon');
+      }
+    } catch (err: any) {
+      console.error('Error validating coupon:', err);
+      const errMsg = err.response?.data?.message || err.message || 'Invalid Coupon';
+      setCouponError(errMsg);
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCodeInput('');
+    setCouponError('');
+    setCouponSuccess('');
+  };
 
   if (isLoading) {
     return (
@@ -202,10 +274,8 @@ export const Checkout: React.FC = () => {
   };
 
   // Calculations
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const shipping = 0; // Standard shipping is free
-  const tax = subtotal * 0.018; // 1.8% tax rate
-  const total = Math.max(0, subtotal - discountAmount + shipping + tax);
+  const couponDiscount = appliedCoupon?.discount || 0;
+  const total = Math.max(0, subtotal - discountAmount - couponDiscount + shipping + tax);
 
   // Validation
   const validateForm = () => {
@@ -279,6 +349,7 @@ export const Checkout: React.FC = () => {
         email: emailAddress,
         shippingAddress,
         paymentMethod: mappedMethod,
+        ...(appliedCoupon ? { couponCode: appliedCoupon.couponCode } : {}),
       });
 
       const createdOrderId = order.orderId;
@@ -734,6 +805,64 @@ export const Checkout: React.FC = () => {
 
             {/* Right side checkout columns: Order Summary sticky column */}
             <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
+              {/* Have a Coupon? Card */}
+              {activeStep < 4 && (
+                <div className="bg-white rounded-[24px] border border-slate-200/60 p-6.5 shadow-[0_4px_20px_rgba(15,23,42,0.015)] space-y-4 text-left select-none">
+                  <div className="border-b border-slate-100 pb-2.5">
+                    <h3 className="text-sm font-black text-slate-855 tracking-tight flex items-center space-x-1.5">
+                      <Tag className="w-4 h-4 text-blue-600" />
+                      <span>Have a Coupon?</span>
+                    </h3>
+                  </div>
+
+                  {/* Coupon Code input widget with inline button */}
+                  <div className="relative flex items-center mb-1">
+                    <input
+                      type="text"
+                      disabled={couponLoading || couponApplied}
+                      placeholder="Apply Coupon"
+                      value={couponCodeInput}
+                      onChange={(e) => setCouponCodeInput(e.target.value.toUpperCase())}
+                      className="w-full h-10 text-[11px] font-semibold border border-slate-355 rounded-[12px] pl-3 pr-14 text-slate-700 outline-none focus:border-blue-600 transition-colors bg-white shadow-sm uppercase disabled:bg-slate-50 disabled:text-slate-400"
+                    />
+                    <button
+                      disabled={!couponCodeInput.trim() || couponApplied || couponLoading}
+                      onClick={handleApplyCoupon}
+                      className="absolute right-3.5 text-[11px] font-black text-blue-600 hover:text-blue-800 cursor-pointer disabled:text-slate-400 transition-colors border-none bg-transparent"
+                    >
+                      {couponLoading ? 'Applying...' : 'Apply'}
+                    </button>
+                  </div>
+
+                  {/* Success message banner */}
+                  {couponSuccess && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl space-y-1.5">
+                      <div className="flex items-center space-x-1.5 text-emerald-750 text-xs font-black">
+                        <Check className="w-3.5 h-3.5 stroke-[3px]" />
+                        <span>✔ {couponSuccess}</span>
+                      </div>
+                      <p className="text-[10px] text-emerald-650 font-bold">
+                        You saved <Price value={appliedCoupon?.discount || 0} />
+                      </p>
+                      <button
+                        onClick={handleRemoveCoupon}
+                        className="text-[10px] font-black text-rose-650 hover:text-rose-700 transition-colors uppercase tracking-wider border-none bg-transparent cursor-pointer pl-0 mt-0.5 block font-extrabold"
+                      >
+                        [ Remove Coupon ]
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Error message banner */}
+                  {couponError && (
+                    <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-start space-x-1.5 text-rose-700 text-xs font-semibold">
+                      <AlertCircle className="w-4 h-4 text-rose-650 flex-shrink-0 mt-0.5" />
+                      <span className="leading-tight text-left">{couponError}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="bg-white rounded-[24px] border border-slate-200/60 p-6.5 shadow-[0_4px_20px_rgba(15,23,42,0.015)] space-y-5">
                 <div className="border-b border-slate-100 pb-3">
                   <h2 className="text-sm font-black text-slate-855 tracking-tight text-left">Order Summary</h2>
@@ -776,6 +905,16 @@ export const Checkout: React.FC = () => {
                     <div className="flex justify-between font-bold text-emerald-600">
                       <span>Discount Coupon</span>
                       <span>- <Price value={discountAmount} className="text-emerald-650 font-black" /></span>
+                    </div>
+                  )}
+
+                  {appliedCoupon && (
+                    <div className="flex justify-between font-bold text-emerald-605">
+                      <span className="flex items-center space-x-1">
+                        <Tag className="w-3 h-3 text-emerald-600" />
+                        <span>{appliedCoupon.couponCode}</span>
+                      </span>
+                      <span>- <Price value={appliedCoupon.discount} className="text-emerald-650 font-black" /></span>
                     </div>
                   )}
 

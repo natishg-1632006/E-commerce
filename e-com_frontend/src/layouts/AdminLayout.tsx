@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   Tag,
+  Ticket,
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../store';
@@ -28,6 +29,7 @@ const navItems = [
   { key: 'categories', label: 'Categories', icon: Tag, path: '/admin/categories' },
   { key: 'inventory', label: 'Inventory', icon: Boxes, path: '/admin/inventory' },
   { key: 'analytics', label: 'Analytics', icon: BarChart3, path: '/admin/analytics' },
+  { key: 'coupons', label: 'Coupons', icon: Ticket, path: '/admin/coupons' },
 ];
 
 interface AdminLayoutProps {

@@ -22,6 +22,7 @@ import AdminCustomers from './pages/admin/AdminCustomers';
 import AdminInventory from './pages/admin/AdminInventory';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
 import AdminCategories from './pages/admin/AdminCategories';
+import AdminCoupons from './pages/admin/AdminCoupons';
 
 const queryClient = new QueryClient();
 
@@ -255,6 +256,30 @@ export function App() {
               element={
                 <AdminRoute>
                   <AdminCategories mode="edit" />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/coupons"
+              element={
+                <AdminRoute>
+                  <AdminCoupons mode="list" />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/coupons/create"
+              element={
+                <AdminRoute>
+                  <AdminCoupons mode="create" />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/coupons/:couponId"
+              element={
+                <AdminRoute>
+                  <AdminCoupons mode="edit" />
                 </AdminRoute>
               }
             />

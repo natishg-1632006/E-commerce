@@ -1013,6 +1013,7 @@ const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ orderId, onBack, onOr
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isErrorToast, setIsErrorToast] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const triggerToast = (msg: string, isError = false) => {
     setToastMsg(msg); setIsErrorToast(isError);
@@ -1053,6 +1054,46 @@ const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ orderId, onBack, onOr
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     triggerToast(`${label} copied to clipboard!`);
+  };
+
+  const handleDownloadInvoice = async () => {
+    setIsDownloading(true);
+    try {
+      const blob = await orderService.downloadInvoice(orderId);
+      
+      if (blob.type === 'application/json') {
+        const text = await blob.text();
+        const errorData = JSON.parse(text);
+        throw new Error(errorData.message || 'Failed to download invoice.');
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `invoice_${orderId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      triggerToast('Invoice downloaded successfully!');
+    } catch (err: any) {
+      console.error('Error downloading invoice:', err);
+      let errorMsg = 'Failed to download invoice.';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const parsed = JSON.parse(text);
+          errorMsg = parsed.message || errorMsg;
+        } catch (_) {}
+      } else if (err.response?.data?.message) {
+        errorMsg = err.response.data.message;
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      triggerToast(errorMsg, true);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   if (loading) {
@@ -1189,11 +1230,17 @@ const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ orderId, onBack, onOr
             className="h-8 w-8 rounded-lg border border-slate-200 bg-white flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50 cursor-pointer transition-all" title="Refresh Order">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
-          {/* Invoice – architecture ready, disabled until backend endpoint is available */}
-          <button disabled title="Invoice generation is pending backend implementation."
-            className="h-8 px-3 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400 flex items-center space-x-1.5 cursor-not-allowed opacity-60">
-            <FileText className="w-3.5 h-3.5" />
-            <span>Invoice (Unavailable)</span>
+          <button
+            onClick={handleDownloadInvoice}
+            disabled={isDownloading}
+            className="h-8 px-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-bold text-slate-600 flex items-center space-x-1.5 transition-all cursor-pointer shadow-sm disabled:opacity-60"
+          >
+            {isDownloading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />
+            ) : (
+              <FileText className="w-3.5 h-3.5 text-slate-400" />
+            )}
+            <span>{isDownloading ? 'Downloading…' : 'Download Invoice'}</span>
           </button>
         </div>
       </div>
@@ -1550,6 +1597,59 @@ const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ orderId, onBack, onOr
           </div>
         </div>
 
+        {/* Coupon Details Section */}
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="flex items-center space-x-2 pb-2.5 border-b border-slate-100">
+            <ShoppingBag className="w-4 h-4 text-blue-600" />
+            <h3 className="text-[13.5px] font-black text-slate-900">Coupon Details</h3>
+          </div>
+          {order.couponCode ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-[12px] font-semibold">
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Coupon Code</span>
+                  <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider">{order.couponCode}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Campaign Name</span>
+                  <span className="text-slate-800 font-bold">{order.coupon?.couponName || 'Discount Campaign'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Discount Type</span>
+                  <span className="text-slate-800 font-bold capitalize">{String(order.coupon?.discountType || 'FIXED').toLowerCase()}</span>
+                </div>
+              </div>
+              <div className="space-y-3 border-t sm:border-t-0 sm:border-l sm:pl-6 border-slate-100 pt-3 sm:pt-0">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Discount Value</span>
+                  <span className="text-slate-800 font-bold">
+                    {order.coupon?.discountType === 'PERCENTAGE' ? `${order.coupon?.discountValue}%` : formatCurrency(order.coupon?.discountValue || order.discountAmount)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Total Before Discount</span>
+                  <span className="text-slate-800 font-bold">{formatCurrency(order.subtotal || (order.totalAmount + (order.discountAmount || 0)))}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Discount Amount</span>
+                  <span className="text-red-650 font-bold">- {formatCurrency(order.discountAmount)}</span>
+                </div>
+                <div className="flex justify-between border-t border-slate-100 pt-2">
+                  <span className="text-slate-400">Coupon Applied Status</span>
+                  <span className="text-emerald-600 font-bold flex items-center gap-1">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>Applied</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-5 text-slate-400 text-[12px] font-bold">
+              No Coupon Applied
+            </div>
+          )}
+        </div>
+
         {/* Payment Details */}
         <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4">
           <div className="flex items-center space-x-2 pb-2.5 border-b border-slate-100">
@@ -1568,10 +1668,24 @@ const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ orderId, onBack, onOr
             <div className="space-y-3 border-t sm:border-t-0 sm:border-l sm:pl-6 border-slate-100 pt-3 sm:pt-0">
               <div className="flex justify-between">
                 <span className="text-slate-400">Subtotal</span>
-                <span className="text-slate-800">{formatCurrency(order.totalAmount)}</span>
+                <span className="text-slate-800">{formatCurrency(order.subtotal || order.totalAmount)}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Shipping Charge</span>
+                <span className="text-slate-800">FREE</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Tax</span>
+                <span className="text-slate-800">₹0</span>
+              </div>
+              {order.discountAmount ? (
+                <div className="flex justify-between text-red-655">
+                  <span>Coupon Discount</span>
+                  <span>- {formatCurrency(order.discountAmount)}</span>
+                </div>
+              ) : null}
               <div className="flex justify-between border-t border-slate-100 pt-2.5">
-                <span className="text-slate-900 font-extrabold">Total Amount</span>
+                <span className="text-slate-900 font-extrabold">Grand Total</span>
                 <span className="text-[16px] font-black text-blue-600">{formatCurrency(order.totalAmount)}</span>
               </div>
             </div>

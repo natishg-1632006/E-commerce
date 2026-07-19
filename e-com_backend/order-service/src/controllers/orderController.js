@@ -1,11 +1,11 @@
 const service = require('../services/orderService');
 const { expirePendingOrders } = require('../services/orderExpirationService');
 const { success, error } = require('../utils/responseHandler');
-const { getProfile, updateProfile} = require('../utils/userApi');
+const { getProfile, updateProfile } = require('../utils/userApi');
 
 const createOrder = async (req, res, next) => {
   try {
-    const { email, shippingAddress, paymentMethod } = req.body;
+    const { email, shippingAddress, paymentMethod, couponCode } = req.body;
 
     const userId = req.user.sub;
     const token = req.headers.authorization;
@@ -15,7 +15,8 @@ const createOrder = async (req, res, next) => {
       email,
       shippingAddress,
       paymentMethod,
-      token
+      token,
+      couponCode
     );
 
     success(res, order, 201);
@@ -75,6 +76,27 @@ const cancelOrder = async (req, res, next) => {
   }
 };
 
+const downloadInvoice = async (req, res, next) => {
+  try {
+    const order = await service.getOrderById(req.params.id);
+    if (!order) return error(res, 'Order not found', 404);
+
+    // Ownership check: only admin or the user who placed it can download
+    const userGroups = req.user["cognito:groups"] || [];
+    const isAdmin = userGroups.includes('Admin');
+    if (!isAdmin && order.userId !== req.user.sub) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=invoice_${req.params.id}.pdf`);
+
+    await service.generateInvoicePdf(order, res);
+  } catch (err) {
+    next(err);
+  }
+};
+
 const expirePending = async (req, res, next) => {
   try {
     const result = await expirePendingOrders();
@@ -84,4 +106,4 @@ const expirePending = async (req, res, next) => {
   }
 };
 
-module.exports = { createOrder, getAllOrders, getOrderById, getOrdersByUser, updateOrderStatus, cancelOrder, expirePending };
+module.exports = { createOrder, getAllOrders, getOrderById, getOrdersByUser, updateOrderStatus, cancelOrder, downloadInvoice, expirePending };

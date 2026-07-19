@@ -46,6 +46,14 @@ router.get(
   controller.getOrderById
 );
 
+// Customer/Admin - Download Invoice PDF
+router.get(
+  '/:id/invoice',
+  authMiddleware,
+  authorize('Customer', 'Admin'),
+  controller.downloadInvoice
+);
+
 // Admin only - Update order status
 router.put(
   '/:id/status',

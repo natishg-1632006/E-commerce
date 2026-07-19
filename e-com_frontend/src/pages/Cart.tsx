@@ -3,7 +3,6 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
 import type { RootState, AppDispatch } from '../store';
 import {
-  applyCoupon,
   removeCoupon,
   fetchCart,
   addToCartBackend,
@@ -45,8 +44,7 @@ import guideImg from '../assets/products/guide.jpg';
 export const Cart: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
-  const { items, discountCode, discountAmount, status } = useSelector((state: RootState) => state.cart);
-  const [couponInput, setCouponInput] = useState('');
+  const { items, discountAmount, status } = useSelector((state: RootState) => state.cart);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
@@ -125,26 +123,6 @@ export const Cart: React.FC = () => {
       setIsProcessing(false);
     }
   };
-
-  const handleApplyCoupon = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!couponInput.trim()) return;
-    
-    const code = couponInput.trim().toUpperCase();
-    if (code === 'NATCART15' || code === 'WELCOME5') {
-      dispatch(applyCoupon(code));
-      toast.success(`Coupon "${code}" applied successfully!`, {
-        icon: '🏷️',
-      });
-      setCouponInput('');
-    } else {
-      toast.error('Invalid coupon code!', {
-        icon: '❌',
-      });
-    }
-  };
-
-
 
   const handleRemoveCoupon = () => {
     dispatch(removeCoupon());
@@ -665,30 +643,7 @@ export const Cart: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Coupon Code input widget with inline button */}
-                  <div className="relative flex items-center mb-6">
-                    <input
-                      type="text"
-                      placeholder="Apply Coupon"
-                      value={couponInput}
-                      onChange={(e) => setCouponInput(e.target.value)}
-                      className="w-full h-10 text-[11px] font-semibold border border-slate-355 rounded-[12px] pl-3 pr-14 text-slate-700 outline-none focus:border-blue-600 transition-colors bg-white shadow-sm"
-                    />
-                    <button
-                      onClick={handleApplyCoupon}
-                      className="absolute right-3.5 text-[11px] font-black text-blue-600 hover:text-blue-800 cursor-pointer transition-colors"
-                    >
-                      Apply
-                    </button>
-                  </div>
 
-                  {/* Coupon hint note */}
-                  {!discountCode && (
-                    <div className="bg-blue-50/50 border border-blue-100/50 rounded-xl p-2.5 text-[9.5px] font-bold text-blue-700 mb-5 leading-snug flex items-center space-x-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                      <span>Use coupon code <b>NATCART15</b> to save ₹15,000 instantly!</span>
-                    </div>
-                  )}
 
                   {/* Checkout CTA */}
                   <Button

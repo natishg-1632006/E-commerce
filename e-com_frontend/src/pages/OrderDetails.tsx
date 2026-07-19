@@ -12,7 +12,10 @@ import {
   Calendar,
   Copy,
   CreditCard,
-  MapPin
+  MapPin,
+  FileText,
+  Loader2,
+  XCircle
 } from 'lucide-react';
 
 import ssdImg from '../assets/products/samsung_t7_ssd.jpg';
@@ -91,48 +94,110 @@ export const OrderDetails: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [resolvedProducts, setResolvedProducts] = useState<Record<string, any>>({});
 
-  useEffect(() => {
-    const fetchOrderDetails = async () => {
-      if (!orderId) return;
-      setIsLoading(true);
-      try {
-        const orderData = await orderService.getOrderById(orderId);
-        if (!orderData) {
-          toast.error('Order not found.');
-          navigate('/orders');
-          return;
-        }
-        setOrder(orderData);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
-        // Fetch products in background to get images/slugs if missing
-        if (orderData.items && orderData.items.length > 0) {
-          const productMap: Record<string, any> = {};
-          await Promise.all(
-            orderData.items.map(async (item: any) => {
-              try {
-                const prod = await productService.getProductById(item.productId);
-                if (prod) productMap[item.productId] = prod;
-              } catch (e) {
-                // Ignore missing product queries
-              }
-            })
-          );
-          setResolvedProducts(productMap);
-        }
-      } catch (err: any) {
-        console.error('Error fetching order details:', err);
-        toast.error(err.response?.data?.message || err.message || 'Failed to load order details.');
+  const fetchOrderDetails = async () => {
+    if (!orderId) return;
+    setIsLoading(true);
+    try {
+      const orderData = await orderService.getOrderById(orderId);
+      if (!orderData) {
+        toast.error('Order not found.');
         navigate('/orders');
-      } finally {
-        setIsLoading(false);
+        return;
       }
-    };
+      setOrder(orderData);
+
+      // Fetch products in background to get images/slugs if missing
+      if (orderData.items && orderData.items.length > 0) {
+        const productMap: Record<string, any> = {};
+        await Promise.all(
+          orderData.items.map(async (item: any) => {
+            try {
+              const prod = await productService.getProductById(item.productId);
+              if (prod) productMap[item.productId] = prod;
+            } catch (e) {
+              // Ignore missing product queries
+            }
+          })
+        );
+        setResolvedProducts(productMap);
+      }
+    } catch (err: any) {
+      console.error('Error fetching order details:', err);
+      toast.error(err.response?.data?.message || err.message || 'Failed to load order details.');
+      navigate('/orders');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchOrderDetails();
-  }, [orderId, navigate]);
+  }, [orderId]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success('Order ID copied to clipboard!');
+  };
+
+  const handleDownloadInvoice = async () => {
+    if (!orderId) return;
+    setIsDownloading(true);
+    try {
+      const blob = await orderService.downloadInvoice(orderId);
+
+      if (blob.type === 'application/json') {
+        const text = await blob.text();
+        const errorData = JSON.parse(text);
+        throw new Error(errorData.message || 'Failed to download invoice.');
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `invoice_${orderId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Invoice downloaded successfully!');
+    } catch (err: any) {
+      console.error('Error downloading invoice:', err);
+      let errorMsg = 'Failed to download invoice.';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const parsed = JSON.parse(text);
+          errorMsg = parsed.message || errorMsg;
+        } catch (_) {}
+      } else if (err.response?.data?.message) {
+        errorMsg = err.response.data.message;
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      toast.error(errorMsg);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!orderId) return;
+    setIsCancelling(true);
+    try {
+      await orderService.cancelOrder(orderId);
+      toast.success('Order cancelled successfully!');
+      setShowCancelModal(false);
+      await fetchOrderDetails();
+    } catch (err: any) {
+      console.error('Error cancelling order:', err);
+      toast.error(err.response?.data?.message || err.message || 'Failed to cancel order.');
+    } finally {
+      setIsCancelling(false);
+    }
   };
 
   if (isLoading) {
@@ -155,13 +220,41 @@ export const OrderDetails: React.FC = () => {
 
   if (!order) return null;
 
+  const statusLower = String(order.orderStatus || '').toLowerCase();
+  const canCancelCustomer = ['pending payment', 'pending_payment', 'pending', 'confirmed', 'processing'].includes(statusLower);
   const trackingSteps = getTrackingSteps(order.orderStatus || 'Pending Payment', order.statusHistory || []);
   const grandTotal = order.items?.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0) || order.totalAmount || 0;
 
-
-
   return (
     <MainLayout>
+      {/* Confirmation Modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-white border border-slate-100 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-5">
+            <div className="flex items-center space-x-3 text-left">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
+                <XCircle className="w-5 h-5 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-[15px] font-black text-slate-900">Cancel Order?</h3>
+                <p className="text-[11.5px] text-slate-500 font-medium mt-0.5">Are you sure you want to cancel this order? This action cannot be undone.</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3 justify-end pt-2">
+              <button onClick={() => setShowCancelModal(false)} disabled={isCancelling}
+                className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-[11px] font-black uppercase tracking-wider text-slate-600 rounded-xl transition-all cursor-pointer disabled:opacity-50">
+                Keep Order
+              </button>
+              <button onClick={handleCancelOrder} disabled={isCancelling}
+                className="px-4 py-2 bg-red-650 hover:bg-red-750 text-white text-[11px] font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-red-600/25 active:scale-95 cursor-pointer disabled:opacity-50 flex items-center space-x-1.5">
+                {isCancelling && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{isCancelling ? 'Cancelling…' : 'Cancel Order'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6 text-left">
         
         {/* Breadcrumb Path */}
@@ -229,6 +322,30 @@ export const OrderDetails: React.FC = () => {
               <CreditCard className="w-3.5 h-3.5" />
               <span>{order.paymentStatus || 'Pending'}</span>
             </span>
+
+            {/* Action Buttons */}
+            <button
+              onClick={handleDownloadInvoice}
+              disabled={isDownloading}
+              className="h-8.5 px-3.5 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-655 flex items-center space-x-1.5 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+            >
+              {isDownloading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />
+              ) : (
+                <FileText className="w-3.5 h-3.5 text-slate-400" />
+              )}
+              <span>{isDownloading ? 'Downloading…' : 'Invoice'}</span>
+            </button>
+
+            {canCancelCustomer && (
+              <button
+                onClick={() => setShowCancelModal(true)}
+                className="h-8.5 px-3.5 rounded-full border border-red-200 bg-white hover:bg-red-50 text-[10px] font-black uppercase tracking-wider text-red-600 flex items-center space-x-1.5 transition-all cursor-pointer shadow-sm"
+              >
+                <XCircle className="w-3.5 h-3.5 text-red-500" />
+                <span>Cancel Order</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -353,20 +470,30 @@ export const OrderDetails: React.FC = () => {
             <div className="space-y-2 text-xs font-bold text-slate-550">
               <div className="flex justify-between">
                 <span>Subtotal</span>
-                <span className="text-slate-800"><Price value={grandTotal} /></span>
+                <span className="text-slate-800"><Price value={order.subtotal || grandTotal} /></span>
               </div>
               <div className="flex justify-between">
-                <span>Shipping Fee</span>
+                <span>Shipping Charge</span>
                 <span className="text-slate-800">FREE</span>
               </div>
+              <div className="flex justify-between">
+                <span>Tax</span>
+                <span className="text-slate-800">₹0</span>
+              </div>
+              {order.discountAmount ? (
+                <div className="flex justify-between text-red-650">
+                  <span>Coupon Discount</span>
+                  <span>- <Price value={order.discountAmount} /></span>
+                </div>
+              ) : null}
               <div className="border-t border-slate-100 pt-2 flex justify-between font-black text-slate-900 text-sm">
-                <span>Total Amount</span>
+                <span>Grand Total</span>
                 <span className="text-blue-655"><Price value={order.totalAmount || grandTotal} /></span>
               </div>
             </div>
 
             <div className="pt-2 text-[10px] text-slate-400 font-semibold">
-              Paid via {order.paymentMethod || 'Card'}
+              Paid via {order.paymentMethod || 'Card'} • Status: {order.paymentStatus || 'Pending'}
             </div>
           </div>
         </div>

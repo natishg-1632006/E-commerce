@@ -25,7 +25,12 @@ const createOrderRules = [
     .withMessage('paymentMethod is required')
     .isIn(['COD', 'Card', 'UPI', 'NetBanking'])
     .withMessage('paymentMethod must be COD, Card, UPI or NetBanking'),
+  body("couponCode")
+    .optional()
+    .isString()
+    .trim(),
   handleValidation,
+
 ];
 
 const updateStatusRules = [

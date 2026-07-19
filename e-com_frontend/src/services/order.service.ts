@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const ORDER_API_BASE_URL = 'https://ptmx1zxx9i.execute-api.ap-southeast-1.amazonaws.com';
+const ORDER_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 
+  (window.location.hostname === 'localhost' ? 'http://localhost:5003' : 'https://ptmx1zxx9i.execute-api.ap-southeast-1.amazonaws.com');
 
 const getAuthToken = () => {
   return localStorage.getItem('natcart_access_token') || localStorage.getItem('natcart_token');
@@ -86,6 +87,15 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   expiresAt?: string;
+  subtotal?: number;
+  discountAmount?: number;
+  couponCode?: string;
+  coupon?: {
+    couponCode: string;
+    couponName: string;
+    discountType: 'PERCENTAGE' | 'FIXED';
+    discountValue: number;
+  };
 }
 
 export interface GetOrdersParams {
@@ -215,6 +225,10 @@ const normaliseOrder = (raw: any): Order => {
     createdAt:     raw.createdAt ?? raw.created_at ?? '',
     updatedAt:     raw.updatedAt ?? raw.updated_at ?? '',
     expiresAt:     raw.expiresAt ?? raw.expires_at ?? undefined,
+    subtotal:      raw.subtotal !== undefined ? Number(raw.subtotal) : undefined,
+    discountAmount: raw.discountAmount !== undefined ? Number(raw.discountAmount) : undefined,
+    couponCode:    raw.couponCode ?? undefined,
+    coupon:        raw.coupon ?? undefined,
   };
 };
 
@@ -335,6 +349,18 @@ class OrderService {
     return response.data;
   }
 
+  async downloadInvoice(id: string): Promise<Blob> {
+    const response = await orderApi.get(`/api/v1/orders/${id}/invoice`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  }
+
+  async cancelOrder(id: string): Promise<any> {
+    const response = await orderApi.put(`/api/v1/orders/${id}/cancel`);
+    return response.data;
+  }
+
   async getOrdersByUser(userId: string): Promise<Order[]> {
     const response = await orderApi.get(`/api/v1/orders/user/${userId}`);
     const data = response.data;
@@ -349,6 +375,7 @@ class OrderService {
     email: string;
     shippingAddress: ShippingAddress;
     paymentMethod: string;
+    couponCode?: string;
   }): Promise<Order> {
     const response = await orderApi.post('/api/v1/orders', orderData);
     const data = response.data;
