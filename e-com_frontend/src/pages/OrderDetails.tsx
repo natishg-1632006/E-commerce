@@ -15,7 +15,8 @@ import {
   MapPin,
   FileText,
   Loader2,
-  XCircle
+  XCircle,
+  AlertTriangle
 } from 'lucide-react';
 
 import ssdImg from '../assets/products/samsung_t7_ssd.jpg';
@@ -55,30 +56,24 @@ const getTrackingSteps = (status: string, statusHistory: any[]) => {
     { label: 'Packed', key: 'PACKED' },
     { label: 'Shipped', key: 'SHIPPED' },
     { label: 'Out for Delivery', key: 'OUT_FOR_DELIVERY' },
-    { label: 'Delivered', key: 'DELIVERED' }
+    { label: 'Completed', key: 'DELIVERED' }
   ];
+
+  const currentStatusUpper = status.toUpperCase().replace(/ /g, '_');
+  let currentIdx = stepsDef.findIndex(step => 
+    step.key === currentStatusUpper || 
+    (step.key === 'PENDING_PAYMENT' && currentStatusUpper === 'PENDING')
+  );
 
   const getHistoryItem = (key: string) => {
     return statusHistory.find((h: any) => String(h.status).toUpperCase() === key);
   };
 
-  let foundCurrent = false;
-  const currentStatusUpper = status.toUpperCase().replace(/ /g, '_');
-
-  return stepsDef.map((step) => {
+  return stepsDef.map((step, idx) => {
     const histItem = getHistoryItem(step.key);
-    let active = false;
-
-    if (histItem) {
-      active = true;
-    } else if (!foundCurrent) {
-      active = true;
-      if (step.key === currentStatusUpper || (step.key === 'PENDING_PAYMENT' && currentStatusUpper === 'PENDING')) {
-        foundCurrent = true;
-      }
-    }
-
+    const active = !!histItem || (currentIdx !== -1 && idx <= currentIdx);
     const date = histItem ? formatDate(histItem.timestamp) : (active ? 'Completed' : 'Expected soon');
+
     return {
       label: step.label,
       date,
@@ -227,30 +222,61 @@ export const OrderDetails: React.FC = () => {
 
   return (
     <MainLayout>
-      {/* Confirmation Modal */}
+      {/* Premium Confirmation Modal */}
       {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="bg-white border border-slate-100 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-5">
-            <div className="flex items-center space-x-3 text-left">
-              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
-                <XCircle className="w-5 h-5 text-red-500" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="bg-white border border-slate-100/80 rounded-3xl p-6.5 max-w-sm w-full shadow-2xl space-y-5 text-left">
+            
+            {/* Alert Header */}
+            <div className="flex items-start space-x-3.5">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-500 animate-pulse" />
               </div>
-              <div>
-                <h3 className="text-[15px] font-black text-slate-900">Cancel Order?</h3>
-                <p className="text-[11.5px] text-slate-500 font-medium mt-0.5">Are you sure you want to cancel this order? This action cannot be undone.</p>
+              <div className="space-y-1">
+                <h3 className="text-sm font-black text-slate-900 leading-tight">Cancel Order?</h3>
+                <p className="text-[11px] text-slate-455 font-bold leading-normal">
+                  Are you sure you want to cancel this order? This action cannot be undone.
+                </p>
               </div>
             </div>
-            <div className="flex items-center space-x-3 justify-end pt-2">
-              <button onClick={() => setShowCancelModal(false)} disabled={isCancelling}
-                className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-[11px] font-black uppercase tracking-wider text-slate-600 rounded-xl transition-all cursor-pointer disabled:opacity-50">
+
+            {/* Context order details badge */}
+            <div className="bg-slate-50 border border-slate-150 rounded-2xl p-3.5 text-xs font-bold text-slate-655 space-y-1 font-mono">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Order ID:</span>
+                <span className="text-blue-650 font-black">#{(orderId || '').slice(0, 12)}...</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Total Price:</span>
+                <span className="text-slate-800 font-extrabold"><Price value={order.totalAmount} /></span>
+              </div>
+            </div>
+
+            {/* Actions button tray */}
+            <div className="flex items-center space-x-3.5 justify-end select-none">
+              <button
+                onClick={() => setShowCancelModal(false)}
+                disabled={isCancelling}
+                className="px-4.5 h-10 border border-slate-250 hover:bg-slate-50 text-[11px] font-black uppercase tracking-wider text-slate-650 rounded-xl transition-all cursor-pointer disabled:opacity-50 active:scale-95 shadow-sm"
+              >
                 Keep Order
               </button>
-              <button onClick={handleCancelOrder} disabled={isCancelling}
-                className="px-4 py-2 bg-red-650 hover:bg-red-750 text-white text-[11px] font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-red-600/25 active:scale-95 cursor-pointer disabled:opacity-50 flex items-center space-x-1.5">
-                {isCancelling && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>{isCancelling ? 'Cancelling…' : 'Cancel Order'}</span>
+              <button
+                onClick={handleCancelOrder}
+                disabled={isCancelling}
+                className="px-6 h-10 bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all shadow-md shadow-red-500/20 active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center space-x-1.5"
+              >
+                {isCancelling ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Cancelling...</span>
+                  </>
+                ) : (
+                  <span>Cancel Order</span>
+                )}
               </button>
             </div>
+
           </div>
         </div>
       )}
@@ -303,15 +329,19 @@ export const OrderDetails: React.FC = () => {
             {/* Status Tags */}
             <span
               className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center space-x-1.5 border ${
-                order.orderStatus === 'Delivered'
+                ['DELIVERED', 'COMPLETED'].includes(String(order.orderStatus || '').toUpperCase())
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                  : order.orderStatus === 'Cancelled'
+                  : String(order.orderStatus || '').toUpperCase() === 'CANCELLED'
                     ? 'bg-red-50 text-red-700 border-red-100'
                     : 'bg-blue-50 text-blue-700 border-blue-100'
               }`}
             >
               <Truck className="w-3.5 h-3.5" />
-              <span>{order.orderStatus || 'Pending'}</span>
+              <span>
+                {String(order.orderStatus || 'Pending').toUpperCase() === 'DELIVERED'
+                  ? 'Completed'
+                  : order.orderStatus || 'Pending'}
+              </span>
             </span>
 
             <span className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center space-x-1.5 border ${
@@ -480,10 +510,18 @@ export const OrderDetails: React.FC = () => {
                 <span>Tax</span>
                 <span className="text-slate-800">₹0</span>
               </div>
+              {order.couponCode && (
+                <div className="flex justify-between">
+                  <span>Coupon Used</span>
+                  <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider uppercase border border-blue-100 font-mono">
+                    {order.couponCode}
+                  </span>
+                </div>
+              )}
               {order.discountAmount ? (
-                <div className="flex justify-between text-red-650">
-                  <span>Coupon Discount</span>
-                  <span>- <Price value={order.discountAmount} /></span>
+                <div className="flex justify-between text-emerald-605 font-bold">
+                  <span>Discount</span>
+                  <span>- <Price value={order.discountAmount} className="font-black text-emerald-650" /></span>
                 </div>
               ) : null}
               <div className="border-t border-slate-100 pt-2 flex justify-between font-black text-slate-900 text-sm">

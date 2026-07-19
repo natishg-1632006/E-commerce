@@ -38,6 +38,21 @@ const createCouponValidation = [
     .isISO8601()
     .withMessage("Expiry date must be a valid date"),
 
+  body("scope")
+    .optional()
+    .isIn(["ALL", "PRODUCT", "CATEGORY"])
+    .withMessage("Scope must be ALL, PRODUCT or CATEGORY"),
+
+  body("applicableProducts")
+    .optional()
+    .isArray()
+    .withMessage("Applicable products must be an array"),
+
+  body("applicableCategories")
+    .optional()
+    .isArray()
+    .withMessage("Applicable categories must be an array"),
+
   body("isActive")
     .optional()
     .isBoolean()
@@ -102,7 +117,12 @@ const validateCouponValidation = [
 
   body("cartTotal")
     .isFloat({ gt: 0 })
-    .withMessage("Cart total must be greater than 0")
+    .withMessage("Cart total must be greater than 0"),
+
+  body("items")
+    .optional()
+    .isArray()
+    .withMessage("Items must be an array"),
 ];
 
 module.exports = {

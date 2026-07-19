@@ -100,11 +100,16 @@ const deleteCoupon = async (req, res, next) => {
 
 // Validate Coupon
 const validateCoupon = async (req, res, next) => {
-  
   try {
+
+    console.log("===== COUPON CONTROLLER =====");
+    console.log(JSON.stringify(req.body, null, 2));
+
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) {
+      console.log(errors.array());
+
       return res.status(400).json({
         success: false,
         message: "Validation failed",
@@ -118,6 +123,7 @@ const validateCoupon = async (req, res, next) => {
       success: true,
       data: result,
     });
+
   } catch (error) {
     next(error);
   }

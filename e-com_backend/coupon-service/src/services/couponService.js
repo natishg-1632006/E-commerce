@@ -34,15 +34,35 @@ const createCoupon = async (couponData) => {
 
     const coupon = {
         couponCode,
+
         couponName: couponData.couponName,
+
         description: couponData.description || "",
+
         discountType: couponData.discountType,
+
         discountValue: Number(couponData.discountValue),
+
         minimumOrderAmount: Number(couponData.minimumOrderAmount),
+
+        // NEW FIELDS
+        scope: couponData.scope || "ALL",
+
+        applicableProducts:
+            couponData.applicableProducts || [],
+
+        applicableCategories:
+            couponData.applicableCategories || [],
+
         expiryDate: couponData.expiryDate,
+
         isActive:
-            couponData.isActive === undefined ? true : couponData.isActive,
+            couponData.isActive === undefined
+                ? true
+                : couponData.isActive,
+
         createdAt: now,
+
         updatedAt: now,
     };
 
@@ -143,54 +163,165 @@ const deleteCoupon = async (couponCode) => {
 /**
  * Validate Coupon
  */
-const validateCoupon = async ({ couponCode, cartTotal }) => {
+/**
+ * Validate Coupon
+ */
+const validateCoupon = async ({
+    couponCode,
+    cartTotal,
+    items = [],
+}) => {
+
     const coupon = await getCouponByCode(couponCode);
+
+    // -----------------------------
+    // Basic Validations
+    // -----------------------------
 
     if (!coupon.isActive) {
         throw new Error("Coupon is inactive");
     }
 
-    if (coupon.expiryDate && new Date() > new Date(coupon.expiryDate)) {
-    throw new Error("Coupon has expired");
-}
+    if (
+        coupon.expiryDate &&
+        new Date() > new Date(coupon.expiryDate)
+    ) {
+        throw new Error("Coupon has expired");
+    }
 
-    if (Number(cartTotal) < Number(coupon.minimumOrderAmount)) {
+    if (
+        Number(cartTotal) <
+        Number(coupon.minimumOrderAmount)
+    ) {
         throw new Error(
             `Minimum order amount should be ₹${coupon.minimumOrderAmount}`
         );
     }
 
+    // -----------------------------
+    // Calculate Eligible Items
+    // -----------------------------
+
+    let eligibleItems = [];
+
+    switch (coupon.scope || "ALL") {
+
+        case "ALL":
+
+            // If items are available, use them.
+            // Otherwise, use the entire cart total.
+            eligibleItems =
+                items.length > 0
+                    ? items
+                    : [
+                        {
+                            subtotal: Number(cartTotal),
+                        },
+                    ];
+
+            break;
+
+        case "PRODUCT":
+
+            eligibleItems = items.filter(item =>
+                coupon.applicableProducts.includes(
+                    item.productId
+                )
+            );
+
+            break;
+
+        case "CATEGORY":
+
+            eligibleItems = items.filter(item =>
+                coupon.applicableCategories.includes(
+                    item.categoryId
+                )
+            );
+
+            break;
+
+        default:
+
+            throw new Error("Invalid coupon scope");
+    }
+
+    if (
+        (coupon.scope === "PRODUCT" ||
+            coupon.scope === "CATEGORY") &&
+        eligibleItems.length === 0
+    ) {
+        throw new Error(
+            coupon.scope === "PRODUCT"
+                ? "Coupon is not applicable for the selected products."
+                : "Coupon is not applicable for the selected categories."
+        );
+    }
+
+    // -----------------------------
+    // Eligible Subtotal
+    // -----------------------------
+
+    const eligibleSubtotal = eligibleItems.reduce(
+        (sum, item) => sum + Number(item.subtotal),
+        0
+    );
+
     let discount = 0;
 
     if (coupon.discountType === "FIXED") {
+
         discount = Number(coupon.discountValue);
-    }
 
-    if (coupon.discountType === "PERCENTAGE") {
+    } else if (coupon.discountType === "PERCENTAGE") {
+
         discount =
-            (Number(cartTotal) * Number(coupon.discountValue)) / 100;
+            eligibleSubtotal *
+            Number(coupon.discountValue) /
+            100;
     }
 
-    // Prevent discount from exceeding cart total
-    if (discount > Number(cartTotal)) {
-        discount = Number(cartTotal);
+    if (discount > eligibleSubtotal) {
+        discount = eligibleSubtotal;
     }
 
-    const finalAmount = Number(cartTotal) - discount;
+    const finalAmount =
+        Number(cartTotal) - discount;
 
     return {
+
         valid: true,
+
         couponCode: coupon.couponCode,
+
         couponName: coupon.couponName,
+
+        scope: coupon.scope || "ALL",
+
         discountType: coupon.discountType,
+
         discountValue: coupon.discountValue,
-        minimumOrderAmount: coupon.minimumOrderAmount,
+
+        minimumOrderAmount:
+            coupon.minimumOrderAmount,
+
+        eligibleSubtotal,
+
         subtotal: Number(cartTotal),
+
         discount,
+
         finalAmount,
+
+        matchedItems: eligibleItems.map(item => ({
+            productId: item.productId || null,
+            categoryId: item.categoryId || null,
+            categoryName: item.categoryName || null,
+            quantity: item.quantity || 0,
+            subtotal: item.subtotal,
+        })),
     };
 };
-
 module.exports = {
     createCoupon,
     getAllCoupons,

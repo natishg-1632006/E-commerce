@@ -56,15 +56,19 @@ export interface Coupon {
   minimumOrderAmount: number;
   expiryDate: string;
   isActive: boolean;
+  scope?: 'ALL' | 'PRODUCT' | 'CATEGORY';
+  applicableProducts?: string[];
+  applicableCategories?: string[];
   createdAt?: string;
   updatedAt?: string;
 }
 
 class CouponService {
-  async validateCoupon(couponCode: string, cartTotal: number): Promise<CouponValidationResult> {
+  async validateCoupon(couponCode: string, cartTotal: number, items: any[] = []): Promise<CouponValidationResult> {
     const response = await couponApi.post('/api/v1/coupons/validate', {
       couponCode,
       cartTotal,
+      items,
     });
     const res = response.data;
     if (res && res.success && res.data) {

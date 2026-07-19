@@ -166,12 +166,22 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token,
 
       return {
         productId: item.productId,
+
         name: product.name,
+
         brand: product.brand,
-        category: product.category,
+
+        categoryId: product.categoryId,
+
+        categoryName: product.categoryName,
+
         price: product.price,
+
         quantity: item.quantity,
-        subtotal: parseFloat((product.price * item.quantity).toFixed(2)),
+
+        subtotal: parseFloat(
+          (product.price * item.quantity).toFixed(2)
+        ),
       };
     })
   );
@@ -194,18 +204,19 @@ const createOrder = async (userId, email, shippingAddress, paymentMethod, token,
   // orderId is generated here so it can be used as the reservation referenceId,
   // making every inventory movement traceable back to this specific order.
   // ── Step 3: Reserve inventory ───────────────────────────────
-console.log("===== COUPON DEBUG =====");
-console.log("couponCode:", couponCode);
-console.log("subtotal:", subtotal);
-console.log("========================");
+  console.log("===== COUPON DEBUG =====");
+  console.log("couponCode:", couponCode);
+  console.log("subtotal:", subtotal);
+  console.log("========================");
   if (couponCode) {
-    
+
     console.time("Validate Coupon");
 
     try {
       const coupon = await validateCoupon(
         couponCode,
-        subtotal
+        subtotal,
+        enrichedItems
       );
 
       discountAmount = coupon.discount;
@@ -851,131 +862,147 @@ const cancelOrder = async (orderid) => {
 
 const generateInvoicePdf = (order, res) => {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    // Set margin to 0 and size to A4 (595.28 x 841.89 points) to manage page bounds precisely
+    const doc = new PDFDocument({ margin: 0, size: 'A4' });
 
     doc.on('error', (err) => {
       reject(err);
     });
-    doc.on('end', () => {
+
+    res.on('finish', () => {
       resolve();
+    });
+    res.on('error', (err) => {
+      reject(err);
     });
 
     doc.pipe(res);
 
-    // Color Palette
-    const primaryColor = '#1e3a8a'; // Slate blue
-    const textColor = '#334155'; // Dark slate text
-    const borderGray = '#e2e8f0';
+    // Color Palette Accent Colors
+    const primaryColor = '#1e3a8a'; // Slate Blue
+    const darkSlate = '#0f172a'; // Background header color
+    const textColor = '#334155'; // Dark text color
+    const softGray = '#f8fafc'; // Card bg
+    const borderGray = '#e2e8f0'; // Card border
 
-    // ─── Header ───
-    doc.fillColor(primaryColor).fontSize(20).text('NatCart Enterprise', 50, 50, { bold: true });
-    doc.fillColor(textColor).fontSize(9).text('123 E-Commerce Blvd, Tech Suite 400', 50, 75);
-    doc.text('Contact: support@natcart.com | +1-800-NATCART', 50, 90);
+    // ─── Header Banner (Dark Slate background) ───
+    doc.rect(0, 0, 595.28, 120).fill(darkSlate);
 
-    // Invoice details right aligned
-    doc.fillColor(primaryColor).fontSize(14).text('INVOICE', 400, 50, { align: 'right', bold: true });
-    doc.fillColor(textColor).fontSize(9);
+    // Brand and logo details
+    doc.fillColor('#ffffff').fontSize(22).font('Helvetica-Bold').text('NatCart Enterprise', 40, 35);
+    doc.fillColor('#94a3b8').fontSize(9).font('Helvetica').text('Premium Electronics & Gadgets Store', 40, 62);
+    doc.fillColor('#cbd5e1').fontSize(8.5).text('123 E-Commerce Blvd, Tech Suite 400', 40, 77);
+    doc.text('support@natcart.com | www.natcart.com', 40, 90);
+
+    // Invoice Title on the right side
+    doc.fillColor('#3b82f6').fontSize(16).font('Helvetica-Bold').text('INVOICE', 400, 35, { align: 'right', width: 155 });
+    doc.fillColor('#cbd5e1').fontSize(8.5).font('Helvetica');
     const orderid = order.orderid ?? order.orderId ?? 'ORD';
-    doc.text(`Invoice No: INV-${orderid.slice(0, 8).toUpperCase()}`, 400, 75, { align: 'right' });
-    doc.text(`Invoice Date: ${new Date().toLocaleDateString('en-US')}`, 400, 90, { align: 'right' });
-    doc.text(`Order No: ${orderid}`, 400, 105, { align: 'right' });
-    doc.text(`Order Date: ${new Date(order.createdAt).toLocaleDateString('en-US')}`, 400, 120, { align: 'right' });
+    doc.text(`Invoice No: INV-${orderid.slice(0, 8).toUpperCase()}`, 400, 58, { align: 'right', width: 155 });
+    doc.text(`Invoice Date: ${new Date().toLocaleDateString('en-US')}`, 400, 72, { align: 'right', width: 155 });
+    doc.text(`Order ID: #${orderid.slice(0, 12)}`, 400, 86, { align: 'right', width: 155 });
+    doc.text(`Order Date: ${new Date(order.createdAt).toLocaleDateString('en-US')}`, 400, 100, { align: 'right', width: 155 });
 
-    doc.moveDown(2);
-    // Draw horizontal separator line
-    doc.strokeColor(borderGray).lineWidth(1).moveTo(50, 145).lineTo(550, 145).stroke();
+    // ─── Customer Bill & Ship Details Cards ───
+    const cardY = 140;
+    // Customer card block
+    doc.roundedRect(40, cardY, 245, 95, 8).fill(softGray).strokeColor(borderGray).lineWidth(1).stroke();
+    // Shipping card block
+    doc.roundedRect(310, cardY, 245, 95, 8).fill(softGray).strokeColor(borderGray).lineWidth(1).stroke();
 
-    // ─── Customer Details ───
-    doc.fillColor(primaryColor).fontSize(11).text('Customer Details', 50, 160, { bold: true });
-    doc.fillColor(textColor).fontSize(9);
-    doc.text(`Name: ${order.shippingAddress?.fullName || 'Customer'}`, 50, 180);
-    doc.text(`Email: ${order.email}`, 50, 195);
-    doc.text(`Phone: ${order.shippingAddress?.phone || '—'}`, 50, 210);
+    // Customer Card text
+    doc.fillColor(darkSlate).fontSize(10).font('Helvetica-Bold').text('BILL TO:', 55, cardY + 12);
+    doc.fillColor(textColor).fontSize(9).font('Helvetica');
+    doc.text(`Name: ${order.shippingAddress?.fullName || 'Customer'}`, 55, cardY + 30);
+    doc.text(`Email: ${order.email}`, 55, cardY + 45);
+    doc.text(`Phone: ${order.shippingAddress?.phone || '—'}`, 55, cardY + 60);
 
-    doc.fillColor(primaryColor).fontSize(11).text('Shipping Address', 300, 160, { bold: true });
-    doc.fillColor(textColor).fontSize(9);
-    doc.text(`${order.shippingAddress?.address || '—'}`, 300, 180, { width: 250 });
-    doc.text(`${order.shippingAddress?.city || '—'}, ${order.shippingAddress?.state || '—'} - ${order.shippingAddress?.pincode || '—'}`, 300, 210);
+    // Shipping Card text
+    doc.fillColor(darkSlate).fontSize(10).font('Helvetica-Bold').text('SHIP TO:', 325, cardY + 12);
+    doc.fillColor(textColor).fontSize(9).font('Helvetica');
+    doc.text(`${order.shippingAddress?.address || '—'}`, 325, cardY + 30, { width: 215 });
+    doc.text(`${order.shippingAddress?.city || '—'}, ${order.shippingAddress?.state || '—'} - ${order.shippingAddress?.pincode || '—'}`, 325, cardY + 65);
 
-    doc.strokeColor(borderGray).lineWidth(1).moveTo(50, 240).lineTo(550, 240).stroke();
+    // ─── Table Headers (Dark strip) ───
+    const tableTop = 255;
+    doc.rect(40, tableTop, 515, 22).fill('#1e293b');
 
-    // ─── Table Headers ───
-    const tableTop = 260;
-    doc.fillColor(primaryColor).fontSize(9).text('Product', 50, tableTop, { bold: true });
-    doc.text('Qty', 350, tableTop, { align: 'right', bold: true, width: 30 });
-    doc.text('Price', 400, tableTop, { align: 'right', bold: true, width: 60 });
-    doc.text('Total', 480, tableTop, { align: 'right', bold: true, width: 70 });
-
-    doc.strokeColor(borderGray).lineWidth(1).moveTo(50, 275).lineTo(550, 275).stroke();
+    doc.fillColor('#ffffff').fontSize(8.5).font('Helvetica-Bold').text('Product Description', 50, tableTop + 7);
+    doc.text('Qty', 345, tableTop + 7, { align: 'right', width: 35 });
+    doc.text('Unit Price', 395, tableTop + 7, { align: 'right', width: 65 });
+    doc.text('Total', 475, tableTop + 7, { align: 'right', width: 70 });
 
     // ─── Table Rows ───
-    let currentY = 285;
-    (order.items || []).forEach((item) => {
-      // Draw product row
-      doc.fillColor(textColor).fontSize(9);
-      doc.text(item.name, 50, currentY, { width: 280 });
-      doc.text(item.quantity.toString(), 350, currentY, { align: 'right', width: 30 });
-      doc.text(`₹${Number(item.price).toFixed(2)}`, 400, currentY, { align: 'right', width: 60 });
-      doc.text(`₹${Number(item.price * item.quantity).toFixed(2)}`, 480, currentY, { align: 'right', width: 70 });
-
-      currentY += 25;
-      
-      // If table overflows, add page (in practice with 1-5 items it won't, but safe)
-      if (currentY > 700) {
-        doc.addPage();
-        currentY = 50;
+    let currentY = tableTop + 22;
+    (order.items || []).forEach((item, idx) => {
+      // Alternating rows shading
+      if (idx % 2 === 0) {
+        doc.rect(40, currentY, 515, 22).fill('#f8fafc');
       }
+      doc.fillColor(textColor).fontSize(8.5).font('Helvetica');
+      doc.text(item.name, 50, currentY + 6, { width: 280, lineBreak: false });
+      doc.text(item.quantity.toString(), 345, currentY + 6, { align: 'right', width: 35 });
+      doc.text(`₹${Number(item.price).toFixed(2)}`, 395, currentY + 6, { align: 'right', width: 65 });
+      doc.text(`₹${Number(item.price * item.quantity).toFixed(2)}`, 475, currentY + 6, { align: 'right', width: 70 });
+
+      currentY += 22;
     });
 
-    doc.strokeColor(borderGray).lineWidth(1).moveTo(50, currentY).lineTo(550, currentY).stroke();
+    // Draw final table bottom line
+    doc.strokeColor(borderGray).lineWidth(1).moveTo(40, currentY).lineTo(555, currentY).stroke();
     currentY += 15;
 
-    // ─── Pricing Breakdown & Payment info ───
-    // Payment details on left
-    const leftColY = currentY;
-    doc.fillColor(primaryColor).fontSize(10).text('Payment Information', 50, leftColY, { bold: true });
-    doc.fillColor(textColor).fontSize(9);
-    doc.text(`Payment Method: ${order.paymentMethod || '—'}`, 50, leftColY + 20);
-    doc.text(`Payment Status: ${order.paymentStatus || '—'}`, 50, leftColY + 35);
-    doc.text(`Order Status: ${order.orderStatus || '—'}`, 50, leftColY + 50);
+    // ─── Payment Details & Pricing Totals ───
+    const breakdownY = currentY;
 
-    // Pricing totals on right
-    doc.fillColor(textColor).fontSize(9);
-    doc.text('Subtotal:', 350, currentY, { align: 'right', width: 100 });
-    doc.text(`₹${Number(order.subtotal || order.totalAmount || 0).toFixed(2)}`, 460, currentY, { align: 'right', width: 90 });
+    // Left card: Payment Status details
+    doc.roundedRect(40, breakdownY, 245, 85, 8).fill(softGray).strokeColor(borderGray).lineWidth(1).stroke();
+    doc.fillColor(darkSlate).fontSize(9.5).font('Helvetica-Bold').text('PAYMENT OVERVIEW', 55, breakdownY + 12);
+    doc.fillColor(textColor).fontSize(8.5).font('Helvetica');
+    doc.text(`Payment Method: ${order.paymentMethod || 'Card'}`, 55, breakdownY + 30);
+    doc.text(`Payment Status: ${order.paymentStatus || 'PAID'}`, 55, breakdownY + 45);
+    doc.text(`Delivery Status: ${order.orderStatus || 'PENDING'}`, 55, breakdownY + 60);
 
-    currentY += 15;
-    doc.text('Shipping:', 350, currentY, { align: 'right', width: 100 });
-    doc.text('₹0.00', 460, currentY, { align: 'right', width: 90 });
+    // Right card: Pricing Breakdown list
+    doc.fillColor(textColor).fontSize(8.5).font('Helvetica');
+    doc.text('Subtotal:', 340, currentY, { align: 'right', width: 100 });
+    doc.fillColor(darkSlate).font('Helvetica-Bold').text(`₹${Number(order.subtotal || order.totalAmount || 0).toFixed(2)}`, 450, currentY, { align: 'right', width: 95 });
 
-    currentY += 15;
-    doc.text('Tax (0%):', 350, currentY, { align: 'right', width: 100 });
-    doc.text('₹0.00', 460, currentY, { align: 'right', width: 90 });
+    currentY += 16;
+    doc.fillColor(textColor).font('Helvetica').text('Shipping Charge:', 340, currentY, { align: 'right', width: 100 });
+    doc.fillColor(darkSlate).font('Helvetica-Bold').text('₹0.00', 450, currentY, { align: 'right', width: 95 });
+
+    currentY += 16;
+    doc.fillColor(textColor).font('Helvetica').text('Estimated Tax:', 340, currentY, { align: 'right', width: 100 });
+    doc.fillColor(darkSlate).font('Helvetica-Bold').text('₹0.00', 450, currentY, { align: 'right', width: 95 });
 
     if (order.discountAmount) {
-      currentY += 15;
-      doc.fillColor('#b91c1c').text('Coupon Discount:', 350, currentY, { align: 'right', width: 100 });
-      doc.text(`-₹${Number(order.discountAmount || 0).toFixed(2)}`, 460, currentY, { align: 'right', width: 90 });
+      currentY += 16;
+      doc.fillColor('#e11d48').font('Helvetica').text('Coupon Discount:', 340, currentY, { align: 'right', width: 100 });
+      doc.text(`-₹${Number(order.discountAmount).toFixed(2)}`, 450, currentY, { align: 'right', width: 95 });
     }
 
     currentY += 20;
-    doc.strokeColor(borderGray).lineWidth(1).moveTo(350, currentY - 5).lineTo(550, currentY - 5).stroke();
-    doc.fillColor(primaryColor).fontSize(12).text('Grand Total:', 350, currentY, { align: 'right', bold: true, width: 100 });
-    doc.text(`₹${Number(order.totalAmount || 0).toFixed(2)}`, 460, currentY, { align: 'right', bold: true, width: 90 });
+    // Draw totals separator line
+    doc.strokeColor('#cbd5e1').lineWidth(1).moveTo(340, currentY - 4).lineTo(555, currentY - 4).stroke();
 
-    // ─── Coupon details banner if applied ───
+    doc.fillColor(primaryColor).fontSize(11).font('Helvetica-Bold').text('Grand Total:', 340, currentY, { align: 'right', width: 100 });
+    doc.text(`₹${Number(order.totalAmount || 0).toFixed(2)}`, 450, currentY, { align: 'right', width: 95 });
+
+    // ─── Applied Coupon banner if active ───
     if (order.couponCode) {
-      currentY += 40;
-      doc.roundedRect(50, currentY, 500, 45, 6).fillColor('#eff6ff').fill();
-      doc.fillColor('#1e40af').fontSize(9).text(`Coupon Applied: ${order.couponCode}`, 65, currentY + 10, { bold: true });
-      doc.fillColor('#1e40af').fontSize(8.5).text(`Campaign: ${order.coupon?.couponName || 'Discount Campaign'} | Type: ${order.coupon?.discountType || 'FIXED'} | Value: ${order.coupon?.discountValue || 0}`, 65, currentY + 25);
+      currentY += 38;
+      // Light green banner details
+      doc.roundedRect(40, currentY, 515, 38, 6).fill('#f0fdf4').strokeColor('#bbf7d0').lineWidth(1).stroke();
+      doc.fillColor('#15803d').fontSize(9).font('Helvetica-Bold').text('PROMOTIONAL CAMPAIGN APPLIED', 55, currentY + 10);
+      doc.fillColor('#166534').fontSize(8.5).font('Helvetica').text(`Code: ${order.couponCode} | Discount Savings: ₹${Number(order.discountAmount || 0).toFixed(2)}`, 55, currentY + 22);
     }
 
-    // ─── Footer ───
-    const footerY = 750;
-    doc.strokeColor(borderGray).lineWidth(0.5).moveTo(50, footerY).lineTo(550, footerY).stroke();
-    doc.fillColor(textColor).fontSize(8).text('Thank you for shopping with NatCart!', 50, footerY + 10, { align: 'center' });
-    doc.text('For support, contact support@natcart.com or visit www.natcart.com', 50, footerY + 22, { align: 'center' });
+    // ─── Footer Notes ───
+    const footerY = 745;
+    doc.strokeColor(borderGray).lineWidth(0.5).moveTo(40, footerY).lineTo(555, footerY).stroke();
+    doc.fillColor('#94a3b8').fontSize(8.5).font('Helvetica-Bold').text('Thank you for shopping with NatCart!', 40, footerY + 12, { align: 'center', width: 515 });
+    doc.fillColor('#94a3b8').fontSize(8).font('Helvetica').text('For support, contact support@natcart.com or visit www.natcart.com', 40, footerY + 24, { align: 'center', width: 515 });
 
     doc.end();
   });

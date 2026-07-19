@@ -17,7 +17,9 @@ import {
   Smartphone,
   Building2,
   AlertCircle,
-  Tag
+  Tag,
+  CheckCircle,
+  Loader2
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import toast from 'react-hot-toast';
@@ -25,6 +27,7 @@ import { addressService } from '../services/address.service';
 import { paymentService } from '../services/payment.service';
 import { orderService } from '../services/order.service';
 import { couponService } from '../services/coupon.service';
+import { productService } from '../services/product.service';
 
 import guideImg from '../assets/products/guide.jpg';
 
@@ -115,9 +118,37 @@ export const Checkout: React.FC = () => {
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [couponLoading, setCouponLoading] = useState(false);
   const [couponError, setCouponError] = useState('');
-  const [couponSuccess, setCouponSuccess] = useState('');
+  const [cartProducts, setCartProducts] = useState<any[]>([]);
 
   const couponApplied = !!appliedCoupon;
+
+  // Fetch product catalogs to retrieve category IDs for cart items
+  useEffect(() => {
+    const loadCartProducts = async () => {
+      if (items.length === 0) return;
+      try {
+        const productIds = items.map(it => it.id);
+        const res = await productService.getProductsByIds(productIds);
+        const list = res.data || res || [];
+        setCartProducts(list);
+      } catch (err) {
+        console.error('Error loading cart products catalog details:', err);
+      }
+    };
+    loadCartProducts();
+  }, [items]);
+
+  const getValidationItems = () => {
+    return items.map(item => {
+      const prod = cartProducts.find(p => p.productId === item.id);
+      return {
+        productId: item.id,
+        categoryId: prod?.categoryId || '',
+        quantity: item.quantity,
+        subtotal: item.price * item.quantity
+      };
+    });
+  };
 
   // Redirect if cart is empty and we aren't in confirmation screen
   useEffect(() => {
@@ -132,36 +163,34 @@ export const Checkout: React.FC = () => {
 
     const revalidate = async () => {
       try {
-        const result = await couponService.validateCoupon(appliedCoupon.couponCode, subtotal);
+        const validationItems = getValidationItems();
+        const result = await couponService.validateCoupon(appliedCoupon.couponCode, subtotal, validationItems);
         if (result.valid) {
           setAppliedCoupon(result);
         } else {
           setAppliedCoupon(null);
           setCouponError('Coupon removed because your cart no longer satisfies the coupon conditions.');
-          setCouponSuccess('');
         }
       } catch (err) {
         setAppliedCoupon(null);
         setCouponError('Coupon removed because your cart no longer satisfies the coupon conditions.');
-        setCouponSuccess('');
       }
     };
 
     revalidate();
-  }, [subtotal]);
+  }, [subtotal, cartProducts]);
 
   const handleApplyCoupon = async () => {
     if (!couponCodeInput.trim() || couponApplied || couponLoading) return;
 
     setCouponLoading(true);
     setCouponError('');
-    setCouponSuccess('');
 
     try {
-      const result = await couponService.validateCoupon(couponCodeInput.trim(), subtotal);
+      const validationItems = getValidationItems();
+      const result = await couponService.validateCoupon(couponCodeInput.trim().toUpperCase(), subtotal, validationItems);
       if (result.valid) {
         setAppliedCoupon(result);
-        setCouponSuccess('Coupon Applied Successfully');
         setCouponCodeInput('');
       } else {
         setCouponError('Invalid Coupon');
@@ -179,7 +208,6 @@ export const Checkout: React.FC = () => {
     setAppliedCoupon(null);
     setCouponCodeInput('');
     setCouponError('');
-    setCouponSuccess('');
   };
 
   if (isLoading) {
@@ -275,7 +303,9 @@ export const Checkout: React.FC = () => {
 
   // Calculations
   const couponDiscount = appliedCoupon?.discount || 0;
-  const total = Math.max(0, subtotal - discountAmount - couponDiscount + shipping + tax);
+  const total = appliedCoupon
+    ? Math.max(0, appliedCoupon.finalAmount + tax + shipping)
+    : Math.max(0, subtotal - discountAmount - couponDiscount + shipping + tax);
 
   // Validation
   const validateForm = () => {
@@ -349,7 +379,7 @@ export const Checkout: React.FC = () => {
         email: emailAddress,
         shippingAddress,
         paymentMethod: mappedMethod,
-        ...(appliedCoupon ? { couponCode: appliedCoupon.couponCode } : {}),
+        couponCode: appliedCoupon ? appliedCoupon.couponCode : null,
       });
 
       const createdOrderId = order.orderId;
@@ -807,7 +837,7 @@ export const Checkout: React.FC = () => {
             <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
               {/* Have a Coupon? Card */}
               {activeStep < 4 && (
-                <div className="bg-white rounded-[24px] border border-slate-200/60 p-6.5 shadow-[0_4px_20px_rgba(15,23,42,0.015)] space-y-4 text-left select-none">
+                <div className="bg-white rounded-[24px] border border-slate-200/60 p-6.5 shadow-[0_4px_20px_rgba(15,23,42,0.015)] space-y-4.5 text-left select-none">
                   <div className="border-b border-slate-100 pb-2.5">
                     <h3 className="text-sm font-black text-slate-855 tracking-tight flex items-center space-x-1.5">
                       <Tag className="w-4 h-4 text-blue-600" />
@@ -823,40 +853,62 @@ export const Checkout: React.FC = () => {
                       placeholder="Apply Coupon"
                       value={couponCodeInput}
                       onChange={(e) => setCouponCodeInput(e.target.value.toUpperCase())}
-                      className="w-full h-10 text-[11px] font-semibold border border-slate-355 rounded-[12px] pl-3 pr-14 text-slate-700 outline-none focus:border-blue-600 transition-colors bg-white shadow-sm uppercase disabled:bg-slate-50 disabled:text-slate-400"
+                      className="w-full h-11 text-[11px] font-semibold border border-slate-205 rounded-[12px] pl-3 pr-24 text-slate-700 outline-none focus:border-blue-600 transition-colors bg-white shadow-sm uppercase disabled:bg-slate-50 disabled:text-slate-400 font-mono"
                     />
                     <button
                       disabled={!couponCodeInput.trim() || couponApplied || couponLoading}
                       onClick={handleApplyCoupon}
-                      className="absolute right-3.5 text-[11px] font-black text-blue-600 hover:text-blue-800 cursor-pointer disabled:text-slate-400 transition-colors border-none bg-transparent"
+                      className="absolute right-3.5 text-[11px] font-black text-blue-600 hover:text-blue-800 cursor-pointer disabled:text-slate-400 transition-colors border-none bg-transparent flex items-center space-x-1"
                     >
-                      {couponLoading ? 'Applying...' : 'Apply'}
+                      {couponLoading ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                          <span>Applying...</span>
+                        </>
+                      ) : (
+                        <span>Apply</span>
+                      )}
                     </button>
                   </div>
 
                   {/* Success message banner */}
-                  {couponSuccess && (
-                    <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl space-y-1.5">
-                      <div className="flex items-center space-x-1.5 text-emerald-750 text-xs font-black">
-                        <Check className="w-3.5 h-3.5 stroke-[3px]" />
-                        <span>✔ {couponSuccess}</span>
+                  {appliedCoupon && (
+                    <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-left space-y-2.5 animate-fadeIn">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-1.5 text-emerald-800 text-[11px] font-black uppercase tracking-wide">
+                          <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                          <span className="font-mono">{appliedCoupon.couponCode}</span>
+                        </div>
+                        <button
+                          onClick={handleRemoveCoupon}
+                          className="text-[9.5px] font-black text-rose-600 hover:text-rose-700 transition-colors uppercase tracking-wider bg-rose-50 border border-rose-100 px-2 py-0.5 rounded cursor-pointer"
+                        >
+                          Remove Coupon
+                        </button>
                       </div>
-                      <p className="text-[10px] text-emerald-650 font-bold">
-                        You saved <Price value={appliedCoupon?.discount || 0} />
-                      </p>
-                      <button
-                        onClick={handleRemoveCoupon}
-                        className="text-[10px] font-black text-rose-650 hover:text-rose-700 transition-colors uppercase tracking-wider border-none bg-transparent cursor-pointer pl-0 mt-0.5 block font-extrabold"
-                      >
-                        [ Remove Coupon ]
-                      </button>
+
+                      <div className="space-y-1 text-[11px] font-bold text-slate-700">
+                        <div className="text-[10px] text-emerald-700 leading-tight">
+                          {appliedCoupon.couponName}
+                        </div>
+                        <div className="flex justify-between border-t border-emerald-100/50 pt-1.5 text-slate-600 mt-1">
+                          <span>Discount:</span>
+                          <span className="text-slate-850 font-black">
+                            {appliedCoupon.discountType === 'PERCENTAGE' ? `${appliedCoupon.discountValue}%` : <Price value={appliedCoupon.discountValue} />}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-slate-600">
+                          <span>Amount Saved:</span>
+                          <span className="text-emerald-750 font-black"><Price value={appliedCoupon.discount} /></span>
+                        </div>
+                      </div>
                     </div>
                   )}
 
                   {/* Error message banner */}
                   {couponError && (
-                    <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-start space-x-1.5 text-rose-700 text-xs font-semibold">
-                      <AlertCircle className="w-4 h-4 text-rose-650 flex-shrink-0 mt-0.5" />
+                    <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-2xl flex items-start space-x-1.5 text-rose-705 text-xs font-bold animate-fadeIn">
+                      <AlertCircle className="w-4.5 h-4.5 text-rose-600 flex-shrink-0 mt-0.5" />
                       <span className="leading-tight text-left">{couponError}</span>
                     </div>
                   )}
@@ -895,30 +947,28 @@ export const Checkout: React.FC = () => {
                 </div>
 
                 {/* Calculations details */}
-                <div className="space-y-2.5 pt-3 border-t border-slate-100 text-xs text-left">
-                  <div className="flex justify-between font-bold text-slate-500">
+                <div className="space-y-2.5 pt-3 border-t border-slate-100 text-xs text-left font-bold text-slate-500">
+                  <div className="flex justify-between">
                     <span>Subtotal</span>
                     <Price value={subtotal} className="text-slate-800 font-black" />
                   </div>
 
-                  {discountAmount > 0 && (
-                    <div className="flex justify-between font-bold text-emerald-600">
-                      <span>Discount Coupon</span>
-                      <span>- <Price value={discountAmount} className="text-emerald-650 font-black" /></span>
-                    </div>
-                  )}
-
                   {appliedCoupon && (
-                    <div className="flex justify-between font-bold text-emerald-605">
-                      <span className="flex items-center space-x-1">
-                        <Tag className="w-3 h-3 text-emerald-600" />
-                        <span>{appliedCoupon.couponCode}</span>
-                      </span>
-                      <span>- <Price value={appliedCoupon.discount} className="text-emerald-650 font-black" /></span>
-                    </div>
+                    <>
+                      <div className="flex justify-between">
+                        <span>Coupon</span>
+                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider uppercase border border-blue-100 font-mono">
+                          {appliedCoupon.couponCode}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-emerald-605">
+                        <span>Discount</span>
+                        <span>- <Price value={appliedCoupon.discount} className="text-emerald-650 font-black" /></span>
+                      </div>
+                    </>
                   )}
 
-                  <div className="flex justify-between font-bold text-slate-500">
+                  <div className="flex justify-between">
                     <span>Shipping</span>
                     {shipping > 0 ? (
                       <Price value={shipping} className="text-slate-800 font-black" />
@@ -927,12 +977,12 @@ export const Checkout: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="flex justify-between font-bold text-slate-500">
+                  <div className="flex justify-between">
                     <span>Estimated Tax</span>
                     <Price value={tax} className="text-slate-800 font-black" />
                   </div>
 
-                  <div className="flex justify-between font-black text-slate-850 pt-2 border-t border-slate-100">
+                  <div className="flex justify-between text-slate-850 pt-2.5 border-t border-slate-100 font-black">
                     <span>Total</span>
                     <Price value={total} className="text-sm font-black text-blue-650" />
                   </div>

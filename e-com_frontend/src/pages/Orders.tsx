@@ -21,7 +21,8 @@ import {
   MapPin,
   CreditCard,
   ShoppingBag,
-  ShoppingCart
+  ShoppingCart,
+  Tag
 } from 'lucide-react';
 
 import ssdImg from '../assets/products/samsung_t7_ssd.jpg';
@@ -68,7 +69,7 @@ const getTrackingSteps = (status: string, statusHistory: any[]) => {
     { label: 'Packed', statusKeys: ['PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'] },
     { label: 'Shipped', statusKeys: ['SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'] },
     { label: 'Out for Delivery', statusKeys: ['OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'] },
-    { label: 'Delivered', statusKeys: ['DELIVERED', 'COMPLETED'] }
+    { label: 'Completed', statusKeys: ['DELIVERED', 'COMPLETED'] }
   ];
 
   const currentUpper = status.toUpperCase();
@@ -261,12 +262,14 @@ export const Orders: React.FC = () => {
       let displayStatus = ord.orderStatus || 'Pending';
       if (['PROCESSING', 'PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY'].includes(String(ord.orderStatus).toUpperCase())) {
         displayStatus = 'In Transit';
+      } else if (String(ord.orderStatus).toUpperCase() === 'DELIVERED') {
+        displayStatus = 'Completed';
       }
 
       return {
         id: ord.orderId,
         placedDate,
-        deliveredDate: ord.orderStatus === 'Delivered' ? formatDate(ord.updatedAt) : null,
+        deliveredDate: ['DELIVERED', 'COMPLETED'].includes(String(ord.orderStatus).toUpperCase()) ? formatDate(ord.updatedAt) : null,
         status: displayStatus,
         quantity: items.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0),
         price: ord.totalAmount,
@@ -278,7 +281,9 @@ export const Orders: React.FC = () => {
         paymentSummary,
         rawItems: items,
         paymentMethod: ord.paymentMethod || 'Card',
-        paymentStatus: ord.paymentStatus || 'Pending'
+        paymentStatus: ord.paymentStatus || 'Pending',
+        couponCode: ord.couponCode,
+        discountAmount: ord.discountAmount
       };
     });
   }, [orders]);
@@ -306,7 +311,7 @@ export const Orders: React.FC = () => {
     if (activeTab === 'In Transit') {
       result = result.filter(order => order.status === 'In Transit');
     } else if (activeTab === 'Delivered') {
-      result = result.filter(order => order.status === 'Delivered');
+      result = result.filter(order => ['Delivered', 'Completed'].includes(order.status));
     }
 
     // Dropdown Status Filter
@@ -404,7 +409,7 @@ export const Orders: React.FC = () => {
   // Computed status stats widgets values
   const statsWidget = useMemo(() => {
     const total = ordersList.length;
-    const delivered = ordersList.filter(o => o.status === 'Delivered').length;
+    const delivered = ordersList.filter(o => ['Delivered', 'Completed'].includes(o.status)).length;
     const pending = total - delivered;
     return { total, delivered, pending };
   }, [ordersList]);
@@ -639,10 +644,19 @@ export const Orders: React.FC = () => {
                           </div>
                           <div>
                             <div className="text-xs font-black text-slate-900 tracking-tight">{order.name}</div>
-                            <div className="text-[10px] text-slate-400 font-bold mt-1 flex items-center space-x-3">
+                            <div className="text-[10px] text-slate-400 font-bold mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                               <span>Order ID: <b className="text-blue-650">#{order.id}</b></span>
                               <span>•</span>
                               <span>{order.placedDate}</span>
+                              {order.couponCode && (
+                                <>
+                                  <span>•</span>
+                                  <span className="inline-flex items-center space-x-1 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[9.5px] font-extrabold tracking-wide border border-emerald-100 uppercase font-mono">
+                                    <Tag className="w-2.5 h-2.5 text-emerald-600" />
+                                    <span>Coupon Applied: {order.couponCode}</span>
+                                  </span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -652,7 +666,7 @@ export const Orders: React.FC = () => {
                           <span
                             className={cn(
                               "px-3 py-1 rounded-full text-[9px] font-black tracking-wider uppercase flex items-center space-x-1.5",
-                              order.status === 'Delivered'
+                              ['Delivered', 'Completed'].includes(order.status)
                                 ? "bg-green-50 text-green-755 border border-green-100/60"
                                 : "bg-blue-50 text-blue-755 border border-blue-100/60"
                             )}
@@ -683,7 +697,7 @@ export const Orders: React.FC = () => {
                               className="absolute top-[13px] left-3 h-[2.5px] bg-blue-600 transition-all duration-500 z-0"
                               style={{
                                 width: `${
-                                  order.status === 'Delivered'
+                                  ['Delivered', 'Completed'].includes(order.status)
                                     ? '100%'
                                     : '50%'
                                 }`
@@ -769,7 +783,7 @@ export const Orders: React.FC = () => {
                         </div>
 
                         <div className="flex items-center space-x-3">
-                          {order.status === 'Delivered' ? (
+                          {['Delivered', 'Completed'].includes(order.status) ? (
                             <>
                               <button
                                 onClick={() => navigate(`/orders/${order.id}`)}
@@ -819,13 +833,21 @@ export const Orders: React.FC = () => {
                         <div className="space-y-0.5">
                           <div className="text-xs font-black text-slate-800">Order #{order.id}</div>
                           <div className="text-[10px] text-slate-450 font-bold">Placed on {order.placedDate}</div>
+                          {order.couponCode && (
+                            <div className="pt-1 select-none">
+                              <span className="inline-flex items-center space-x-1 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-extrabold border border-emerald-100 uppercase font-mono">
+                                <Tag className="w-2.5 h-2.5 text-emerald-600" />
+                                <span>Applied: {order.couponCode}</span>
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Status badge */}
                         <span
                           className={cn(
                             "px-2.5 py-0.5 rounded-full text-[9px] font-black flex items-center space-x-1",
-                            order.status === 'Delivered'
+                            ['Delivered', 'Completed'].includes(order.status)
                               ? "bg-green-50 text-green-700"
                               : "bg-blue-50 text-blue-700"
                           )}
@@ -903,7 +925,7 @@ export const Orders: React.FC = () => {
 
                       {/* Mobile action buttons footer block */}
                       <div className="flex items-center space-x-3 select-none">
-                        {order.status === 'Delivered' ? (
+                        {['Delivered', 'Completed'].includes(order.status) ? (
                           <>
                             <button
                               onClick={() => {

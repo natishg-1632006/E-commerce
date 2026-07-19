@@ -41,6 +41,7 @@ import {
   Mail,
   ChevronDown,
   Check,
+  Printer
 } from 'lucide-react';
 
 // --- Custom Filter Dropdown (matches AdminProducts design) ---
@@ -1056,6 +1057,152 @@ const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ orderId, onBack, onOr
     triggerToast(`${label} copied to clipboard!`);
   };
 
+  const handlePrintSticker = () => {
+    if (!order) return;
+    const stickerHtml = `
+      <html>
+        <head>
+          <title>Pack Sticker - ${order.orderId}</title>
+          <style>
+            @media print {
+              body { margin: 0; padding: 0; }
+              @page { size: 100mm 150mm; margin: 0; }
+            }
+            body {
+              font-family: 'Courier New', Courier, monospace;
+              padding: 20px;
+              color: #000;
+              width: 380px;
+              margin: 0 auto;
+            }
+            .sticker-box {
+              border: 3px dashed #000;
+              padding: 15px;
+              background: #fff;
+            }
+            .header {
+              text-align: center;
+              border-bottom: 2px solid #000;
+              padding-bottom: 10px;
+              margin-bottom: 15px;
+            }
+            .header h1 {
+              font-size: 20px;
+              margin: 0;
+              font-weight: 900;
+              letter-spacing: 1px;
+            }
+            .section {
+              margin-bottom: 12px;
+              border-bottom: 1px dashed #000;
+              padding-bottom: 8px;
+            }
+            .section:last-child {
+              border-bottom: none;
+            }
+            .title {
+              font-size: 11px;
+              font-weight: bold;
+              text-transform: uppercase;
+              margin-bottom: 4px;
+            }
+            .content {
+              font-size: 12px;
+              line-height: 1.4;
+              font-weight: 600;
+            }
+            .grid {
+              display: flex;
+              justify-content: space-between;
+            }
+            .qr-container {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-top: 15px;
+            }
+            .barcode {
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              margin: 15px 0 10px 0;
+            }
+            .barcode-line {
+              height: 40px;
+              background-color: #000;
+              margin: 0 1px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="sticker-box">
+            <div class="header">
+              <h1>NATCART EXPEDITED</h1>
+              <div style="font-size: 10px; margin-top: 4px; font-weight: bold;">PRIORITY SHIPPING LABEL</div>
+            </div>
+            
+            <div class="section grid">
+              <div>
+                <div class="title">ORDER DATE</div>
+                <div class="content">${new Date(order.createdAt).toLocaleDateString()}</div>
+              </div>
+              <div style="text-align: right;">
+                <div class="title">ORDER ID</div>
+                <div class="content">#${order.orderId.slice(0, 12).toUpperCase()}</div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="title">SHIP TO (RECIPIENT)</div>
+              <div class="content" style="font-size: 13px; font-weight: bold;">
+                ${order.shippingAddress?.fullName || 'Customer'}<br/>
+                ${order.shippingAddress?.address || '—'}<br/>
+                ${order.shippingAddress?.city || '—'}, ${order.shippingAddress?.state || '—'} - ${order.shippingAddress?.pincode || '—'}<br/>
+                Phone: ${order.shippingAddress?.phone || '—'}
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="title">PACKAGE CONTENTS</div>
+              <div class="content" style="font-size: 11px;">
+                ${(order.items || []).map(item => `• ${item.quantity}x ${item.name}`).join('<br/>')}
+              </div>
+            </div>
+
+            <div class="qr-container">
+              <div>
+                <div class="title">TRACKING REF</div>
+                <div class="content" style="font-size: 10px;">TRK-${order.orderId.slice(0, 8).toUpperCase()}</div>
+                <div style="font-size: 8px; margin-top: 4px; color: #444;">Scan to verify contents</div>
+              </div>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent('https://orders.natcart.com/invoice/' + order.orderId)}" style="width: 70px; height: 70px;" />
+            </div>
+
+            <div class="barcode">
+              ${Array.from({ length: 45 }).map(() => {
+                const widths = [1, 2, 3, 4];
+                const w = widths[Math.floor(Math.random() * widths.length)];
+                return `<div class="barcode-line" style="width: ${w}px;"></div>`;
+              }).join('')}
+            </div>
+            <div style="text-align: center; font-size: 9px; font-weight: bold; letter-spacing: 1px;">*${order.orderId.slice(0, 12).toUpperCase()}*</div>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 500);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+    const printWindow = window.open('', '_blank', 'width=450,height=650');
+    if (printWindow) {
+      printWindow.document.write(stickerHtml);
+      printWindow.document.close();
+    }
+  };
+
   const handleDownloadInvoice = async () => {
     setIsDownloading(true);
     try {
@@ -1544,6 +1691,114 @@ const OrderDetailPage: React.FC<OrderDetailPageProps> = ({ orderId, onBack, onOr
         </div>
 
       </div>
+
+      {/* Shipping / Package Packing Sticker Section */}
+      <div className="bg-white border border-slate-100/80 rounded-2xl p-5 shadow-[0_2px_12px_-3px_rgba(148,163,184,0.08)]">
+        <div className="flex items-center space-x-2 pb-3.5 border-b border-slate-100">
+          <Printer className="w-4 h-4 text-blue-600" />
+          <h3 className="text-[13.5px] font-black text-slate-900">Package Packing Sticker</h3>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 pt-5">
+          <div className="md:col-span-5 flex flex-col justify-between space-y-4">
+            <div className="space-y-2 text-left">
+              <div className="text-[13.5px] font-extrabold text-slate-800">Print Shipping Label</div>
+              <p className="text-[11.5px] text-slate-500 font-semibold leading-relaxed">
+                Generate and print the shipping label to paste on the outer package box. The label contains delivery addresses, item quantities, tracking barcodes, and a scannable verification QR code.
+              </p>
+            </div>
+            <button
+              onClick={handlePrintSticker}
+              className="h-10 px-5.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all shadow-md shadow-blue-500/20 active:scale-95 cursor-pointer flex items-center justify-center space-x-1.5 self-start"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print Packing Sticker</span>
+            </button>
+          </div>
+
+          <div className="md:col-span-7 flex justify-center">
+            {/* Visual representation of the label */}
+            <div className="border-2 border-dashed border-slate-300 rounded-2xl p-5 bg-white max-w-sm w-full space-y-4 font-mono text-[11px] text-slate-700 shadow-sm relative overflow-hidden select-none">
+              <div className="border-b-2 border-slate-955 pb-2 text-center">
+                <div className="text-[13px] font-black text-slate-955 tracking-wider">NATCART EXPEDITED</div>
+                <div className="text-[8px] font-extrabold text-slate-450 tracking-widest mt-0.5">PRIORITY SHIPPING LABEL</div>
+              </div>
+
+              <div className="flex justify-between border-b border-dashed border-slate-200 pb-2">
+                <div>
+                  <div className="text-[8px] font-bold text-slate-400">ORDER DATE</div>
+                  <div className="font-bold text-slate-800">{new Date(order.createdAt).toLocaleDateString()}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[8px] font-bold text-slate-400">ORDER ID</div>
+                  <div className="font-bold text-slate-800">#{order.orderId.slice(0, 12).toUpperCase()}</div>
+                </div>
+              </div>
+
+              <div className="border-b border-dashed border-slate-200 pb-2 text-left font-mono">
+                <div className="text-[8px] font-bold text-slate-400">SHIP TO (RECIPIENT)</div>
+                <div className="font-bold text-slate-800 leading-normal mt-0.5">
+                  <div className="text-[12px] font-black text-slate-900">{order.shippingAddress?.fullName || 'Customer'}</div>
+                  <div>{order.shippingAddress?.address || '—'}</div>
+                  <div>{order.shippingAddress?.city || '—'}, {order.shippingAddress?.state || '—'} - {order.shippingAddress?.pincode || '—'}</div>
+                  <div>Phone: {order.shippingAddress?.phone || '—'}</div>
+                </div>
+              </div>
+
+              <div className="border-b border-dashed border-slate-200 pb-2 text-left font-mono">
+                <div className="text-[8px] font-bold text-slate-400">PACKAGE CONTENTS</div>
+                <div className="space-y-0.5 mt-1 font-semibold text-slate-600">
+                  {(order.items || []).slice(0, 3).map((item, idx) => (
+                    <div key={idx} className="truncate">• {item.quantity}x {item.name}</div>
+                  ))}
+                  {order.items && order.items.length > 3 && (
+                    <div className="text-slate-455 italic font-medium">+ {order.items.length - 3} more item(s)</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center pt-1 text-left">
+                <div>
+                  <div className="text-[8px] font-bold text-slate-400">TRACKING REF</div>
+                  <div className="font-black text-slate-900">TRK-{order.orderId.slice(0, 8).toUpperCase()}</div>
+                  <div className="text-[7.5px] text-slate-400 mt-1">Scan for details</div>
+                </div>
+                <div className="w-[65px] h-[65px] bg-slate-50 border border-slate-100 flex items-center justify-center p-1 rounded-lg">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=${encodeURIComponent('https://orders.natcart.com/invoice/' + order.orderId)}`}
+                    alt="Sticker QR"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                {/* Visual barcode mockup */}
+                <div className="flex items-center space-x-[1.5px] h-8 bg-white justify-center">
+                  <div className="w-[1.5px] h-full bg-slate-955" />
+                  <div className="w-[3px] h-full bg-slate-955" />
+                  <div className="w-[1px] h-full bg-slate-955" />
+                  <div className="w-[2px] h-full bg-slate-955" />
+                  <div className="w-[1.5px] h-full bg-slate-955" />
+                  <div className="w-[4px] h-full bg-slate-955" />
+                  <div className="w-[1px] h-full bg-slate-955" />
+                  <div className="w-[2.5px] h-full bg-slate-955" />
+                  <div className="w-[1.5px] h-full bg-slate-955" />
+                  <div className="w-[3px] h-full bg-slate-955" />
+                  <div className="w-[1px] h-full bg-slate-955" />
+                  <div className="w-[2px] h-full bg-slate-955" />
+                  <div className="w-[1.5px] h-full bg-slate-955" />
+                  <div className="w-[4px] h-full bg-slate-955" />
+                  <div className="w-[1px] h-full bg-slate-955" />
+                  <div className="w-[2.5px] h-full bg-slate-955" />
+                </div>
+                <div className="text-[7.5px] text-center font-bold tracking-widest text-slate-500 mt-1">*{order.orderId.slice(0, 12).toUpperCase()}*</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Row 3 - Ordered Products & Payments (Full Width) */}
       <div className="space-y-6">
         
