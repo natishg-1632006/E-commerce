@@ -18,6 +18,16 @@ const authorize = require("../middleware/roleMiddleware");
 |--------------------------------------------------------------------------
 */
 
+// Health Check Endpoint
+router.get("/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    service: process.env.SERVICE_NAME,
+    status: "UP",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Create Coupon
 router.post(
   "/",

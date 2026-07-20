@@ -59,6 +59,16 @@ app.get("/health", (req, res) => {
   });
 });
 
+app.get("/api", (req, res) => {
+  res.json({
+    success: true,
+    service: process.env.SERVICE_NAME,
+    version: "1.0.0",
+    status: "running",
+    endpoints: { coupons: "/api/v1/coupons" },
+  });
+});
+
 // API Routes
 app.use("/api/v1/coupons", couponRoutes);
 

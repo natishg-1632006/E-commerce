@@ -42,4 +42,19 @@ const updatePaymentStatus = async (req, res, next) => {
   }
 };
 
-module.exports = { createPayment, getPayment, getPaymentByOrder, updatePaymentStatus };
+const getAllPayments = async (req, res, next) => {
+  try {
+    const payments = await service.getAllPayments();
+    success(res, payments);
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = {
+  createPayment,
+  getPayment,
+  getPaymentByOrder,
+  updatePaymentStatus,
+  getAllPayments,
+};

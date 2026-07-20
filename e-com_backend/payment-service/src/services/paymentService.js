@@ -213,4 +213,17 @@ const updatePaymentStatus = async (paymentid, status, transactionId) => {
   }
 };
 
-module.exports = { createPayment, getPaymentById, getPaymentByOrderId, updatePaymentStatus };
+const getAllPayments = async () => {
+  const { Items = [] } = await docClient.send(
+    new ScanCommand({ TableName: PAYMENTS_TABLE })
+  );
+  return Items;
+};
+
+module.exports = {
+  createPayment,
+  getPaymentById,
+  getPaymentByOrderId,
+  updatePaymentStatus,
+  getAllPayments,
+};

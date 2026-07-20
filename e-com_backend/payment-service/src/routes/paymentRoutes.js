@@ -42,4 +42,12 @@ router.put(
   controller.updatePaymentStatus
 );
 
+// Admin - Get All Payments
+router.get(
+  '/',
+  authMiddleware,
+  authorize('Admin'),
+  controller.getAllPayments
+);
+
 module.exports = router;
