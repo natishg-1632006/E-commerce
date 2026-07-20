@@ -29,6 +29,15 @@ import { customerService } from '../../services/customer.service';
 import type { Customer } from '../../services/customer.service';
 import { orderService } from '../../services/order.service';
 import type { Order } from '../../services/order.service';
+import { analyticsService } from '../../services/analytics.service';
+import type { SalesGrowthAnalyticsData } from '../../services/analytics.service';
+import {
+  WeeklySalesLogChart,
+  PeakOrderHoursChart,
+  TopSellingProductsBarChart,
+  MonthlySalesLogChart,
+} from '../../components/admin/SalesGrowthCharts';
+import { TrendingUp } from 'lucide-react';
 
 const CustomerStatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const norm = (status || '').trim().toLowerCase();
@@ -126,6 +135,12 @@ const AdminCustomers: React.FC = () => {
 
   // Stats calculation maps
   const [customerOrdersMap, setCustomerOrdersMap] = useState<Record<string, { count: number; spent: number }>>({});
+  const [activeViewTab, setActiveViewTab] = useState<'directory' | 'sales_intelligence'>('directory');
+  const [salesGrowthData, setSalesGrowthData] = useState<SalesGrowthAnalyticsData | null>(null);
+
+  useEffect(() => {
+    analyticsService.getSalesGrowthAnalytics().then(setSalesGrowthData).catch(console.error);
+  }, []);
   
   // Action state flags
   const [isSaving, setIsSaving] = useState(false);
@@ -433,12 +448,48 @@ const AdminCustomers: React.FC = () => {
             <div className="border-b border-slate-100 pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 <div className="text-[12px] font-bold text-blue-600 tracking-wider uppercase">CRM Hub</div>
-                <h1 className="text-2xl font-black text-slate-900 tracking-tight mt-1">Customers</h1>
+                <h1 className="text-2xl font-black text-slate-900 tracking-tight mt-1">Customers & Sales Intelligence</h1>
                 <p className="text-[12.5px] text-slate-550 font-medium mt-0.5">
-                  Manage and view your user base, spending logs and details
+                  Manage user base, analyze customer buying patterns and peak order hours
                 </p>
               </div>
+
+              {/* View Tab Switcher */}
+              <div className="bg-slate-100 p-1 rounded-2xl flex items-center space-x-1 self-start sm:self-auto">
+                <button
+                  onClick={() => setActiveViewTab('directory')}
+                  className={`px-3.5 py-1.5 rounded-xl text-[12px] font-extrabold transition-all cursor-pointer flex items-center space-x-1.5 ${
+                    activeViewTab === 'directory' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Customer Directory</span>
+                </button>
+                <button
+                  onClick={() => setActiveViewTab('sales_intelligence')}
+                  className={`px-3.5 py-1.5 rounded-xl text-[12px] font-extrabold transition-all cursor-pointer flex items-center space-x-1.5 ${
+                    activeViewTab === 'sales_intelligence' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>Sales Behavior & Peak Hours</span>
+                </button>
+              </div>
             </div>
+
+            {activeViewTab === 'sales_intelligence' ? (
+              <div className="space-y-6 animate-fadeIn pt-2">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <PeakOrderHoursChart timeSlots={salesGrowthData?.peakOrderHours} />
+                  <TopSellingProductsBarChart products={salesGrowthData?.topSellingProductsRanked} />
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <WeeklySalesLogChart data={salesGrowthData?.weeklySalesLog} />
+                  <MonthlySalesLogChart data={salesGrowthData?.monthlySalesLog} />
+                </div>
+              </div>
+            ) : (
+              <React.Fragment>
 
             {/* KPI Statistics block */}
             {loading ? (
@@ -631,8 +682,10 @@ const AdminCustomers: React.FC = () => {
                 )}
               </div>
             )}
-          </>
-        ) : (
+          </React.Fragment>
+        )}
+      </>
+    ) : (
           /* ================= CUSTOMER WORKSPACE VIEW ================= */
           <div className="space-y-6 animate-fadeIn">
             {/* Header / Back navigation */}

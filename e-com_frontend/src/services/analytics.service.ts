@@ -42,6 +42,21 @@ export interface WeeklyDayTrafficPoint {
   hasNode?: boolean;
 }
 
+export interface PeakOrderHourSlot {
+  slot: string;
+  label: string;
+  count: number;
+  percentage: number;
+  isPeak?: boolean;
+}
+
+export interface SalesGrowthAnalyticsData {
+  weeklySalesLog: { day: string; count: number; revenue: number }[];
+  monthlySalesLog: { month: string; revenue: number; orders: number }[];
+  peakOrderHours: PeakOrderHourSlot[];
+  topSellingProductsRanked: { productId: string; name: string; brand?: string; unitsSold: number; revenue: number }[];
+}
+
 export interface AnalyticsDashboardData {
   revenue: number;
   orders: number;
@@ -159,6 +174,20 @@ export interface SystemHealthData {
 
 class AnalyticsService {
   /**
+   * Helper: Extracts arrays defensively regardless of response wrapping format
+   */
+  private extractArrayData(res: any, primaryKey: string): any[] {
+    if (!res) return [];
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res[primaryKey])) return res[primaryKey];
+    if (res.data) {
+      if (Array.isArray(res.data)) return res.data;
+      if (Array.isArray(res.data[primaryKey])) return res.data[primaryKey];
+    }
+    return [];
+  }
+
+  /**
    * Aggregates 100% REAL database numbers directly from active backend microservices
    * and builds explicit status notice diagnostics for each service.
    */
@@ -173,8 +202,8 @@ class AnalyticsService {
 
     // 1. Order Service
     try {
-      const ordersRes = await orderService.getOrders({ limit: 5000 });
-      rawOrders = ordersRes.orders || [];
+      const ordersRes = await orderService.getOrders({ limit: 500 });
+      rawOrders = this.extractArrayData(ordersRes, 'orders');
       apiNotices.push({
         service: 'Order Service',
         status: rawOrders.length > 0 ? 'OK' : 'WARNING',
@@ -192,8 +221,8 @@ class AnalyticsService {
 
     // 2. Product Service
     try {
-      const prodsRes = await productService.getProducts({ limit: 5000 });
-      products = prodsRes.products || [];
+      const prodsRes = await productService.getProducts({ limit: 500 });
+      products = this.extractArrayData(prodsRes, 'products');
       apiNotices.push({
         service: 'Product Service',
         status: products.length > 0 ? 'OK' : 'WARNING',
@@ -211,8 +240,8 @@ class AnalyticsService {
 
     // 3. Category Service
     try {
-      const catsRes = await categoryService.getCategories({ limit: 1000 });
-      categories = catsRes.categories || [];
+      const catsRes = await categoryService.getCategories({ limit: 500 });
+      categories = this.extractArrayData(catsRes, 'categories');
       apiNotices.push({
         service: 'Category Service',
         status: categories.length > 0 ? 'OK' : 'WARNING',
@@ -231,7 +260,7 @@ class AnalyticsService {
     // 4. Inventory Service
     try {
       const invRes = await inventoryService.getAllInventory();
-      inventoryList = Array.isArray(invRes) ? invRes : invRes?.data || [];
+      inventoryList = this.extractArrayData(invRes, 'inventory');
       apiNotices.push({
         service: 'Inventory Service',
         status: inventoryList.length > 0 ? 'OK' : 'WARNING',
@@ -250,7 +279,7 @@ class AnalyticsService {
     // 5. Coupon Service
     try {
       const couponsRes = await couponService.getCoupons();
-      couponsList = Array.isArray(couponsRes) ? couponsRes : couponsRes?.data || [];
+      couponsList = this.extractArrayData(couponsRes, 'coupons');
       apiNotices.push({
         service: 'Coupon Service',
         status: couponsList.length > 0 ? 'OK' : 'WARNING',
@@ -291,6 +320,138 @@ class AnalyticsService {
   }
 
   /**
+   * GET Customer Sales & Growth Intelligence Analytics Data
+   */
+  async getSalesGrowthAnalytics(): Promise<SalesGrowthAnalyticsData> {
+    const { orders, products } = await this.getRealSourceData();
+
+    // 1. Weekly Sales Log (Mon - Sun)
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayMap: Record<string, { count: number; revenue: number }> = {
+      Mon: { count: 0, revenue: 0 },
+      Tue: { count: 0, revenue: 0 },
+      Wed: { count: 0, revenue: 0 },
+      Thu: { count: 0, revenue: 0 },
+      Fri: { count: 0, revenue: 0 },
+      Sat: { count: 0, revenue: 0 },
+      Sun: { count: 0, revenue: 0 },
+    };
+
+    // 2. Peak Order Hours Analysis (Time Slots)
+    const hourSlotsCount = {
+      Night: 0,       // 12am - 6am
+      Morning: 0,     // 6am - 12pm
+      Afternoon: 0,   // 12pm - 5pm
+      Evening: 0,     // 5pm - 9pm
+      LateNight: 0,   // 9pm - 12am
+    };
+
+    // 3. Monthly Sales Log
+    const monthMap: Record<string, { revenue: number; orders: number }> = {};
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    months.forEach((m) => { monthMap[m] = { revenue: 0, orders: 0 }; });
+
+    // 4. Top Selling Products
+    const prodStatsMap: Record<string, { productId: string; name: string; brand?: string; unitsSold: number; revenue: number }> = {};
+
+    orders.forEach((o) => {
+      const orderDate = new Date(o.createdAt);
+      if (!isNaN(orderDate.getTime())) {
+        const dayIdx = orderDate.getDay(); // 0 = Sun
+        const dayName = dayNames[dayIdx === 0 ? 6 : dayIdx - 1];
+        if (dayMap[dayName]) {
+          dayMap[dayName].count++;
+          dayMap[dayName].revenue += o.totalAmount;
+        }
+
+        const hour = orderDate.getHours();
+        if (hour >= 0 && hour < 6) hourSlotsCount.Night++;
+        else if (hour >= 6 && hour < 12) hourSlotsCount.Morning++;
+        else if (hour >= 12 && hour < 17) hourSlotsCount.Afternoon++;
+        else if (hour >= 17 && hour < 21) hourSlotsCount.Evening++;
+        else hourSlotsCount.LateNight++;
+
+        const mName = months[orderDate.getMonth()];
+        if (monthMap[mName]) {
+          monthMap[mName].orders++;
+          monthMap[mName].revenue += o.totalAmount;
+        }
+      }
+
+      (o.items || []).forEach((item: any) => {
+        const pid = item.productId || item.product_id || item.id || item.name || 'P-UNKNOWN';
+        if (!prodStatsMap[pid]) {
+          prodStatsMap[pid] = {
+            productId: pid,
+            name: item.name || item.productName || 'Product',
+            brand: item.brand || 'NatCart',
+            unitsSold: 0,
+            revenue: 0,
+          };
+        }
+        const qty = Number(item.quantity || item.qty || 1);
+        const price = Number(item.price || item.unitPrice || 0);
+        prodStatsMap[pid].unitsSold += qty;
+        prodStatsMap[pid].revenue += Number(item.subtotal || qty * price);
+      });
+    });
+
+    // Include catalog products if orders are empty
+    products.forEach((p: any) => {
+      const pid = p.productId || p.id;
+      if (!prodStatsMap[pid]) {
+        prodStatsMap[pid] = {
+          productId: pid,
+          name: p.name,
+          brand: p.brand || 'NatCart',
+          unitsSold: 0,
+          revenue: 0,
+        };
+      }
+    });
+
+    const weeklySalesLog = dayNames.map((day) => ({
+      day,
+      count: dayMap[day].count,
+      revenue: dayMap[day].revenue,
+    }));
+
+    const monthlySalesLog = months.slice(0, 6).map((month) => ({
+      month,
+      orders: monthMap[month].orders,
+      revenue: monthMap[month].revenue,
+    }));
+
+    const totalHourOrders = Object.values(hourSlotsCount).reduce((a, b) => a + b, 0);
+    const maxHourCount = Math.max(...Object.values(hourSlotsCount), 0);
+
+    const rawSlots = [
+      { slot: 'Night', label: '12am - 6am', count: hourSlotsCount.Night },
+      { slot: 'Morning', label: '6am - 12pm', count: hourSlotsCount.Morning },
+      { slot: 'Afternoon', label: '12pm - 5pm', count: hourSlotsCount.Afternoon },
+      { slot: 'Evening', label: '5pm - 9pm', count: hourSlotsCount.Evening },
+      { slot: 'Late Night', label: '9pm - 12am', count: hourSlotsCount.LateNight },
+    ];
+
+    const peakOrderHours: PeakOrderHourSlot[] = rawSlots.map((s) => ({
+      ...s,
+      percentage: totalHourOrders > 0 ? Math.round((s.count / totalHourOrders) * 100) : 0,
+      isPeak: s.count > 0 && s.count === maxHourCount,
+    }));
+
+    const topSellingProductsRanked = Object.values(prodStatsMap)
+      .sort((a, b) => b.unitsSold - a.unitsSold || b.revenue - a.revenue)
+      .slice(0, 5);
+
+    return {
+      weeklySalesLog,
+      monthlySalesLog,
+      peakOrderHours,
+      topSellingProductsRanked,
+    };
+  }
+
+  /**
    * GET /api/v1/analytics/dashboard
    */
   async getDashboard(): Promise<AnalyticsDashboardData> {
@@ -315,9 +476,8 @@ class AnalyticsService {
     let paidCount = 0;
     const paymentSummary = { UPI: 0, Card: 0, COD: 0, Wallet: 0 };
 
-    // Grouping for real Monthly Sales Growth & Weekly Day Traffic
     const monthlyMap: Record<string, number> = {};
-    const dayTrafficCounts = [0, 0, 0, 0, 0, 0, 0]; // Sun=0, Mon=1...Sat=6
+    const dayTrafficCounts = [0, 0, 0, 0, 0, 0, 0];
 
     orders.forEach((o) => {
       const statusUpper = o.orderStatus.toUpperCase();
@@ -345,13 +505,12 @@ class AnalyticsService {
       else if (methodUpper.includes('COD')) paymentSummary.COD++;
       else if (methodUpper.includes('WALLET')) paymentSummary.Wallet++;
 
-      // Real date calculations
       const orderDate = new Date(o.createdAt);
       if (!isNaN(orderDate.getTime())) {
         const monthKey = orderDate.toLocaleString('default', { month: 'short' });
         monthlyMap[monthKey] = (monthlyMap[monthKey] || 0) + (isCompleted || payUpper === 'PAID' ? o.totalAmount : 1);
 
-        const dayIdx = orderDate.getDay(); // 0-6
+        const dayIdx = orderDate.getDay();
         dayTrafficCounts[dayIdx]++;
       }
     });
@@ -364,7 +523,7 @@ class AnalyticsService {
 
     products.forEach((p: any) => {
       const inv: any = inventoryMap.get(p.productId || p.id);
-      const stock = inv ? inv.currentStock : Number(p.stock || p.quantity || p.countInStock || 15);
+      const stock = inv ? inv.currentStock : Number(p.stock || p.quantity || p.countInStock || 0);
       const reserved = inv ? inv.reservedStock : 0;
 
       totalCurrentStock += stock;
@@ -374,37 +533,33 @@ class AnalyticsService {
 
     const averageOrderValue = paidCount > 0 ? parseFloat((totalRevenue / paidCount).toFixed(2)) : 0;
 
-    // Calculate 100% REAL Inventory Health Percentage
     const inventoryHealthPercentage = totalCurrentStock > 0
       ? Math.round(((totalCurrentStock - lowStockItemsCount) / totalCurrentStock) * 100)
-      : 80;
+      : 0;
 
-    // Build Monthly Sales Growth array from real DB
     const allMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+    const maxMonthlyRev = Math.max(...Object.values(monthlyMap), 1);
     const monthlySalesGrowth: MonthlyGrowthPoint[] = allMonths.map((m) => ({
       month: m,
-      value: monthlyMap[m] ? Math.round(monthlyMap[m] / 1000) || 30 : 25 + Math.floor(Math.random() * 15),
+      value: monthlyMap[m] ? Math.round((monthlyMap[m] / maxMonthlyRev) * 100) : 0,
     }));
 
-    // Build Weekly Day Traffic array from real DB (Mon to Sun)
     const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const maxDayCount = Math.max(...dayTrafficCounts, 1);
     const weeklyDayTraffic: WeeklyDayTrafficPoint[] = dayNames.map((day, idx) => {
-      // Mapping: Mon=1, Tue=2...Sun=0
       const dbDayIdx = idx === 6 ? 0 : idx + 1;
       const cnt = dayTrafficCounts[dbDayIdx];
-      const height = cnt > 0 ? Math.min(100, Math.max(30, Math.round((cnt / maxDayCount) * 100))) : 40 + (idx % 3) * 15;
+      const height = cnt > 0 ? Math.min(100, Math.round((cnt / maxDayCount) * 100)) : 0;
       return {
         day,
         height,
-        hasNode: idx % 2 === 0,
+        hasNode: cnt > 0,
       };
     });
 
-    // Extract recent trend nodes for MiniTrendLineNode widget
     const recentTrendNodes = orders.length > 0
-      ? orders.slice(-6).map((o) => Math.round(o.totalAmount / 1000) || 50)
-      : [30, 50, 40, 75, 55, 85];
+      ? orders.slice(-6).map((o) => Number(o.totalAmount || 0))
+      : [0, 0, 0, 0, 0, 0];
 
     return {
       revenue: parseFloat(totalRevenue.toFixed(2)),
@@ -646,7 +801,7 @@ class AnalyticsService {
     const inventoryRemaining: InventoryRemainingItem[] = products.map((p: any) => {
       const pid = p.productId || p.id;
       const inv: any = inventoryMap.get(pid);
-      const currentStock = inv ? inv.currentStock : Number(p.stock || p.quantity || p.countInStock || 15);
+      const currentStock = inv ? inv.currentStock : Number(p.stock || p.quantity || p.countInStock || 0);
       const reservedStock = inv ? inv.reservedStock : 0;
       const availableStock = inv ? inv.availableStock : Math.max(0, currentStock - reservedStock);
 
@@ -689,9 +844,20 @@ class AnalyticsService {
     const { orders, categories, products } = await this.getRealSourceData();
     const productCategoryMap = new Map(products.map((p: any) => [p.productId || p.id, p.categoryId || p.category]));
 
-    const catStatsMap: Record<string, { categoryId: string; name: string; unitsSold: number; revenue: number }> = {};
+    const catStatsMap: Record<string, { categoryId: string; name: string; unitsSold: number; revenue: number; productCount: number }> = {};
     let totalRevenue = 0;
     let totalUnitsSold = 0;
+
+    categories.forEach((c: any) => {
+      const catId = c.categoryId || c.id;
+      catStatsMap[catId] = {
+        categoryId: catId,
+        name: c.name,
+        unitsSold: 0,
+        revenue: 0,
+        productCount: products.filter((p: any) => (p.categoryId || p.category) === catId || p.categoryName === c.name).length,
+      };
+    });
 
     orders.forEach((o) => {
       (o.items || []).forEach((item: any) => {
@@ -709,6 +875,7 @@ class AnalyticsService {
             name: catName,
             unitsSold: 0,
             revenue: 0,
+            productCount: 0,
           };
         }
 
@@ -723,22 +890,17 @@ class AnalyticsService {
       });
     });
 
-    categories.forEach((c: any) => {
-      const catId = c.categoryId || c.id;
-      if (!catStatsMap[catId]) {
-        catStatsMap[catId] = {
-          categoryId: catId,
-          name: c.name,
-          unitsSold: 0,
-          revenue: 0,
-        };
-      }
-    });
-
     const colors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#6366f1'];
+    const totalCatalogProds = products.length || 1;
+
     const categoryStats: CategoryStat[] = Object.values(catStatsMap).map((c, idx) => ({
-      ...c,
-      share: totalRevenue > 0 ? parseFloat(((c.revenue / totalRevenue) * 100).toFixed(1)) : 0,
+      categoryId: c.categoryId,
+      name: c.name,
+      unitsSold: c.unitsSold,
+      revenue: c.revenue,
+      share: totalRevenue > 0
+        ? parseFloat(((c.revenue / totalRevenue) * 100).toFixed(1))
+        : parseFloat(((c.productCount / totalCatalogProds) * 100).toFixed(1)),
       color: colors[idx % colors.length],
     }));
 

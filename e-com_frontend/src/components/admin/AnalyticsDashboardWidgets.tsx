@@ -1,5 +1,12 @@
 import React from 'react';
 
+// Currency formatting helper
+const formatCurrency = (amount: number) => {
+  if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)}Cr`;
+  if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)}L`;
+  return `₹${amount.toLocaleString('en-IN')}`;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. SPEEDOMETER RADIAL GAUGE (Semi-Circle Speedometer with Needle)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8,13 +15,15 @@ interface SpeedometerGaugeProps {
   subtitle?: string;
   minLabel?: string;
   maxLabel?: string;
+  onClick?: (data: { title: string; value: string; details: string }) => void;
 }
 
 export const SpeedometerGauge: React.FC<SpeedometerGaugeProps> = ({
-  percentage = 88,
+  percentage = 0,
   subtitle = 'Target Score',
   minLabel = '0%',
   maxLabel = '100%',
+  onClick,
 }) => {
   const clampPct = Math.min(100, Math.max(0, percentage));
   const size = 180;
@@ -27,8 +36,27 @@ export const SpeedometerGauge: React.FC<SpeedometerGaugeProps> = ({
   const strokeDashoffset = arcLength - (clampPct / 100) * arcLength;
   const needleAngle = -90 + (clampPct / 100) * 180;
 
+  const handleClick = () => {
+    if (onClick) {
+      onClick({
+        title: 'Sales Fulfillment Target Score',
+        value: `${clampPct}%`,
+        details: `Current fulfillment score based on real database completed vs pending orders. ${clampPct}% of orders delivered successfully.`,
+      });
+    }
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center relative select-none">
+    <div
+      onClick={handleClick}
+      className="flex flex-col items-center justify-center relative select-none cursor-pointer group p-1"
+      title="Click for Fulfillment Details"
+    >
+      {/* Pure CSS Floating Hover Tooltip (Zero Blinking) */}
+      <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 absolute -top-7 z-30 bg-slate-900 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-lg whitespace-nowrap">
+        Fulfillment Score: {clampPct}% (Click for details)
+      </div>
+
       <svg width={size} height={size / 2 + 35} className="overflow-visible">
         <defs>
           <linearGradient id="speedometerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -54,10 +82,9 @@ export const SpeedometerGauge: React.FC<SpeedometerGaugeProps> = ({
           strokeLinecap="round"
           strokeDasharray={arcLength}
           strokeDashoffset={strokeDashoffset}
-          className="transition-all duration-1000 ease-out"
         />
 
-        <g transform={`rotate(${needleAngle}, ${cx}, ${cy})`} className="transition-transform duration-700 ease-out">
+        <g transform={`rotate(${needleAngle}, ${cx}, ${cy})`}>
           <line x1={cx} y1={cy} x2={cx} y2={cy - radius + 18} stroke="#1e293b" strokeWidth="3.5" strokeLinecap="round" />
           <circle cx={cx} cy={cy} r="6" fill="#1e293b" stroke="#ffffff" strokeWidth="2" />
         </g>
@@ -71,7 +98,9 @@ export const SpeedometerGauge: React.FC<SpeedometerGaugeProps> = ({
       </svg>
 
       <div className="text-center -mt-4">
-        <div className="text-2.5xl font-black text-slate-900 leading-none">{clampPct}%</div>
+        <div className="text-2.5xl font-black text-slate-900 leading-none group-hover:text-blue-600">
+          {clampPct}%
+        </div>
         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">{subtitle}</div>
       </div>
     </div>
@@ -79,7 +108,7 @@ export const SpeedometerGauge: React.FC<SpeedometerGaugeProps> = ({
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. PROGRESS DONUT RING (Schedule 1 Ring with Dual Category Arcs)
+// 2. PROGRESS DONUT RING (Dual Color Ring Chart)
 // ─────────────────────────────────────────────────────────────────────────────
 interface ProgressDonutRingProps {
   percentage: number;
@@ -87,26 +116,46 @@ interface ProgressDonutRingProps {
   labelRight?: string;
   valueLeft?: string;
   valueRight?: string;
+  onClick?: (data: { title: string; value: string; details: string }) => void;
 }
 
 export const ProgressDonutRing: React.FC<ProgressDonutRingProps> = ({
-  percentage = 88,
-  labelLeft = 'Completed Orders',
-  labelRight = 'Pending / Other',
-  valueLeft = '88%',
-  valueRight = '12%',
+  percentage = 0,
+  labelLeft = 'Completed',
+  labelRight = 'Pending',
+  valueLeft = '0 orders',
+  valueRight = '0 orders',
+  onClick,
 }) => {
   const clampPct = Math.min(100, Math.max(0, percentage));
-  const size = 140;
-  const strokeWidth = 14;
+  const size = 150;
+  const strokeWidth = 18;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
+  const mainOffset = circumference - (clampPct / 100) * circumference;
 
-  const blueLength = (clampPct / 100) * circumference;
+  const handleClick = () => {
+    if (onClick) {
+      onClick({
+        title: 'Net Revenue & Fulfillment Velocity',
+        value: `${clampPct}% Completed`,
+        details: `${valueLeft} completed vs ${valueRight} pending fulfillment. Total conversion velocity score: ${clampPct}%.`,
+      });
+    }
+  };
 
   return (
-    <div className="flex flex-col items-center justify-between h-full space-y-4">
-      <div className="relative w-35 h-35 flex items-center justify-center">
+    <div
+      onClick={handleClick}
+      className="flex flex-col items-center justify-center space-y-3 cursor-pointer group"
+      title="Click for Revenue Velocity Details"
+    >
+      <div className="relative flex items-center justify-center">
+        {/* Pure CSS Hover Tooltip */}
+        <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 absolute -top-6 z-30 bg-slate-900 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-lg whitespace-nowrap">
+          {clampPct}% Completed Orders ({valueLeft})
+        </div>
+
         <svg width={size} height={size} className="transform -rotate-90">
           <circle
             cx={size / 2}
@@ -115,10 +164,8 @@ export const ProgressDonutRing: React.FC<ProgressDonutRingProps> = ({
             fill="transparent"
             stroke="#f97316"
             strokeWidth={strokeWidth}
-            strokeDasharray={`${circumference}`}
-            strokeDashoffset="0"
-            strokeLinecap="round"
           />
+
           <circle
             cx={size / 2}
             cy={size / 2}
@@ -126,32 +173,35 @@ export const ProgressDonutRing: React.FC<ProgressDonutRingProps> = ({
             fill="transparent"
             stroke="#2563eb"
             strokeWidth={strokeWidth}
-            strokeDasharray={`${blueLength} ${circumference}`}
-            strokeDashoffset="0"
+            strokeDasharray={circumference}
+            strokeDashoffset={mainOffset}
             strokeLinecap="round"
-            className="transition-all duration-1000"
           />
         </svg>
 
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-black text-slate-900">{clampPct}%</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="text-2xl font-black text-slate-900 group-hover:text-blue-600">
+            {clampPct}%
+          </span>
+          <span className="text-[9.5px] font-extrabold text-slate-400 uppercase tracking-wider">Ratio</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 w-full pt-2 border-t border-slate-100 text-[11px]">
+      <div className="w-full flex items-center justify-between px-2 text-[11px] font-bold">
         <div className="flex items-center space-x-1.5">
-          <span className="w-3 h-1.5 rounded-full bg-blue-600 flex-shrink-0" />
-          <div className="truncate">
-            <div className="text-slate-400 font-semibold truncate">{labelLeft}</div>
-            <div className="font-extrabold text-slate-900">{valueLeft}</div>
+          <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+          <div>
+            <div className="text-slate-900 leading-none">{labelLeft}</div>
+            <div className="text-[10px] text-slate-400 font-semibold mt-0.5">{valueLeft}</div>
           </div>
         </div>
-        <div className="flex items-center space-x-1.5">
-          <span className="w-3 h-1.5 rounded-full bg-orange-500 flex-shrink-0" />
-          <div className="truncate">
-            <div className="text-slate-400 font-semibold truncate">{labelRight}</div>
-            <div className="font-extrabold text-slate-900">{valueRight}</div>
+
+        <div className="flex items-center space-x-1.5 text-right">
+          <div>
+            <div className="text-slate-900 leading-none">{labelRight}</div>
+            <div className="text-[10px] text-slate-400 font-semibold mt-0.5">{valueRight}</div>
           </div>
+          <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
         </div>
       </div>
     </div>
@@ -159,7 +209,7 @@ export const ProgressDonutRing: React.FC<ProgressDonutRingProps> = ({
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. MINI TREND LINE NODE (Schedule 2 Node Graph)
+// 3. MINI TREND LINE NODE (Bezier curve with nodes)
 // ─────────────────────────────────────────────────────────────────────────────
 interface MiniTrendLineNodeProps {
   data?: number[];
@@ -167,59 +217,83 @@ interface MiniTrendLineNodeProps {
   leftSub?: string;
   rightTitle?: string;
   rightSub?: string;
+  onClick?: (data: { title: string; value: string; details: string }) => void;
 }
 
 export const MiniTrendLineNode: React.FC<MiniTrendLineNodeProps> = ({
-  data = [35, 65, 45, 80, 50],
-  leftTitle = 'Direct Revenue',
-  leftSub = '₹2,85,000',
-  rightTitle = 'Referral Revenue',
-  rightSub = '₹1,00,000',
+  data = [0, 0, 0, 0, 0, 0],
+  leftTitle = 'Total Revenue',
+  leftSub = '₹0',
+  rightTitle = 'Avg Basket',
+  rightSub = '₹0',
+  onClick,
 }) => {
-  const w = 220;
-  const h = 85;
-  const paddingX = 15;
-  const paddingY = 15;
+  const width = 220;
+  const height = 45;
+  const padding = 10;
 
   const maxVal = Math.max(...data, 1);
   const minVal = Math.min(...data, 0);
-  const range = maxVal - minVal || 1;
 
-  const stepX = (w - paddingX * 2) / (data.length - 1);
-  const points = data.map((val, i) => ({
-    x: paddingX + i * stepX,
-    y: h - paddingY - ((val - minVal) / range) * (h - paddingY * 2),
-  }));
+  const points = data.map((val, idx) => {
+    const x = padding + (idx / Math.max(1, data.length - 1)) * (width - padding * 2);
+    const y = height - padding - ((val - minVal) / (maxVal - minVal || 1)) * (height - padding * 2);
+    return { x, y, val };
+  });
 
-  const pathStr = points.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ');
+  const pathD = points.reduce((acc, pt, idx, arr) => {
+    if (idx === 0) return `M ${pt.x} ${pt.y}`;
+    const prev = arr[idx - 1];
+    const cx1 = prev.x + (pt.x - prev.x) / 2;
+    const cy1 = prev.y;
+    const cx2 = prev.x + (pt.x - prev.x) / 2;
+    const cy2 = pt.y;
+    return `${acc} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${pt.x} ${pt.y}`;
+  }, '');
+
+  const handleClick = (idx: number, val: number) => {
+    if (onClick) {
+      onClick({
+        title: 'Order Conversion Volume Trend',
+        value: `Checkpoint ${idx + 1}: ${formatCurrency(val)}`,
+        details: `Sales volume trend checkpoint ${idx + 1}. Recorded order amount: ${formatCurrency(val)}. Total Revenue: ${leftSub}, Avg Basket: ${rightSub}.`,
+      });
+    }
+  };
 
   return (
-    <div className="flex flex-col justify-between h-full space-y-3">
-      <div className="w-full relative flex items-center justify-center">
-        <svg width={w} height={h} className="overflow-visible">
-          <path d={pathStr} fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          {points.map((p, i) => (
-            <circle
-              key={i}
-              cx={p.x}
-              cy={p.y}
-              r="4.5"
-              fill={i % 2 === 0 ? '#f97316' : '#2563eb'}
-              stroke="#ffffff"
-              strokeWidth="2"
-            />
-          ))}
+    <div className="flex flex-col space-y-3">
+      <div className="w-full flex items-center justify-center py-2 relative">
+        <svg width={width} height={height} className="overflow-visible">
+          <path d={pathD} fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" />
+
+          {points.map((pt, i) => {
+            const isOrange = i % 2 === 0;
+            return (
+              <circle
+                key={i}
+                cx={pt.x}
+                cy={pt.y}
+                r="5"
+                fill={isOrange ? '#f97316' : '#2563eb'}
+                stroke="#ffffff"
+                strokeWidth="2"
+                className="cursor-pointer group"
+                onClick={() => handleClick(i, pt.val)}
+              />
+            );
+          })}
         </svg>
       </div>
 
-      <div className="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100">
+      <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-[11px] font-bold">
         <div>
-          <div className="text-slate-400 font-semibold">{leftTitle}</div>
-          <div className="font-extrabold text-slate-900">{leftSub}</div>
+          <span className="text-slate-400 block text-[9.5px] uppercase">{leftTitle}</span>
+          <span className="text-slate-900">{leftSub}</span>
         </div>
         <div className="text-right">
-          <div className="text-slate-400 font-semibold">{rightTitle}</div>
-          <div className="font-extrabold text-slate-900">{rightSub}</div>
+          <span className="text-slate-400 block text-[9.5px] uppercase">{rightTitle}</span>
+          <span className="text-slate-900">{rightSub}</span>
         </div>
       </div>
     </div>
@@ -227,52 +301,81 @@ export const MiniTrendLineNode: React.FC<MiniTrendLineNodeProps> = ({
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. STACKED PROGRESS BAR (Schedule 3 Category Meter)
+// 4. STACKED MULTI-CATEGORY PROGRESS BAR
 // ─────────────────────────────────────────────────────────────────────────────
+interface SegmentItem {
+  label: string;
+  value: number;
+  color: string;
+  code?: string;
+}
+
 interface StackedProgressBarProps {
+  segments?: SegmentItem[];
   totalTracked?: string;
-  segments?: { label: string; value: number; color: string; code: string }[];
+  onClick?: (data: { title: string; value: string; details: string }) => void;
 }
 
 export const StackedProgressBar: React.FC<StackedProgressBarProps> = ({
-  totalTracked = '₹3,85,000 Total',
-  segments = [
-    { label: 'Electronics', value: 45, color: '#2563eb', code: '01' },
-    { label: 'Accessories', value: 30, color: '#60a5fa', code: '02' },
-    { label: 'Fashion', value: 15, color: '#fdba74', code: '03' },
-    { label: 'Other', value: 10, color: '#f97316', code: '04' },
-  ],
+  segments = [],
+  totalTracked = '₹0',
+  onClick,
 }) => {
   const totalVal = segments.reduce((sum, s) => sum + s.value, 0) || 1;
 
+  const handleClick = (s: SegmentItem) => {
+    if (onClick) {
+      onClick({
+        title: `Category Share: ${s.label}`,
+        value: `${formatCurrency(s.value)} (${Math.round((s.value / totalVal) * 100)}%)`,
+        details: `Category ${s.label} represents ${Math.round((s.value / totalVal) * 100)}% of total category revenue (${totalTracked}).`,
+      });
+    }
+  };
+
   return (
-    <div className="flex flex-col justify-between h-full space-y-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">All Tracked</span>
-        <span className="text-sm font-black text-slate-900">{totalTracked}</span>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between text-[11px] font-bold">
+        <span className="text-slate-400 text-[10px] uppercase">All Tracked Category Share</span>
+        <span className="text-slate-900 font-black text-[13px]">{totalTracked}</span>
       </div>
 
-      <div className="w-full h-4 bg-slate-100 rounded-lg flex overflow-hidden p-0.5 space-x-0.5">
-        {segments.map((seg, i) => {
-          const pct = (seg.value / totalVal) * 100;
-          return (
-            <div
-              key={i}
-              className="h-full first:rounded-l-md last:rounded-r-md transition-all duration-700"
-              style={{ width: `${pct}%`, backgroundColor: seg.color }}
-              title={`${seg.label}: ${pct.toFixed(0)}%`}
-            />
-          );
-        })}
-      </div>
+      {segments.length > 0 ? (
+        <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex relative">
+          {segments.map((seg, i) => {
+            const pct = Math.max(1, (seg.value / totalVal) * 100);
+            return (
+              <div
+                key={i}
+                className="h-full transition-colors cursor-pointer group relative"
+                style={{ width: `${pct}%`, backgroundColor: seg.color }}
+                onClick={() => handleClick(seg)}
+              >
+                {/* Pure CSS Hover Tooltip */}
+                <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 absolute -top-7 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-lg whitespace-nowrap z-30">
+                  {seg.label}: {Math.round((seg.value / totalVal) * 100)}% ({formatCurrency(seg.value)})
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex items-center justify-center text-[9px] font-bold text-slate-400">
+          No category sales recorded yet
+        </div>
+      )}
 
-      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-[10.5px]">
-        {segments.slice(0, 3).map((seg, i) => (
-          <div key={i} className="flex items-start space-x-1.5">
-            <span className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ backgroundColor: seg.color }} />
-            <div>
-              <div className="font-mono text-slate-400 font-bold">{seg.code}</div>
-              <div className="font-extrabold text-slate-900 truncate">{seg.label}</div>
+      <div className="grid grid-cols-3 gap-1 pt-1">
+        {segments.map((seg, i) => (
+          <div
+            key={i}
+            onClick={() => handleClick(seg)}
+            className="flex items-center space-x-1.5 p-1 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+          >
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: seg.color }} />
+            <div className="truncate text-[10px] font-bold text-slate-700">
+              <span className="text-slate-400 mr-1">{seg.code || `0${i + 1}`}</span>
+              <span className="truncate">{seg.label}</span>
             </div>
           </div>
         ))}
@@ -282,72 +385,73 @@ export const StackedProgressBar: React.FC<StackedProgressBarProps> = ({
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. DUAL COLUMN BAR CHART (Main Schedule Comparison Chart)
+// 5. DUAL COLUMN VERTICAL BAR CHART
 // ─────────────────────────────────────────────────────────────────────────────
 interface DualColumnBarChartProps {
-  data: { label: string; val1: number; val2: number }[];
+  data?: { label: string; val1: number; val2: number }[];
   series1Name?: string;
   series2Name?: string;
+  onClick?: (data: { title: string; value: string; details: string }) => void;
 }
 
 export const DualColumnBarChart: React.FC<DualColumnBarChartProps> = ({
-  data = [
-    { label: 'Jan', val1: 40, val2: 55 },
-    { label: 'Feb', val1: 65, val2: 38 },
-    { label: 'Mar', val1: 50, val2: 70 },
-    { label: 'Apr', val1: 85, val2: 45 },
-    { label: 'May', val1: 35, val2: 60 },
-  ],
+  data = [],
   series1Name = 'Gross Orders',
   series2Name = 'Net Revenue',
+  onClick,
 }) => {
-  const maxVal = Math.max(...data.flatMap((d) => [d.val1, d.val2]), 100);
+  const handleClick = (item: { label: string; val1: number; val2: number }) => {
+    if (onClick) {
+      onClick({
+        title: `Period ${item.label} Breakdown`,
+        value: `${series1Name}: ${item.val1} | ${series2Name}: ${item.val2}%`,
+        details: `Detailed performance breakdown for period ${item.label}. ${series1Name}: ${item.val1} orders vs ${series2Name}: ${item.val2}% margin target.`,
+      });
+    }
+  };
 
   return (
-    <div className="w-full space-y-4">
-      <div className="h-44 w-full flex items-end justify-between px-2 gap-2 relative border-b border-slate-100">
-        {[0, 25, 50, 75, 100].map((pct) => (
-          <div
-            key={pct}
-            className="absolute left-0 right-0 border-b border-slate-100 text-[9px] font-mono text-slate-300 pl-1"
-            style={{ bottom: `${pct}%` }}
-          >
-            {Math.round((pct / 100) * maxVal)}
-          </div>
-        ))}
+    <div className="space-y-3 relative">
+      <div className="h-36 w-full flex items-end justify-between px-2 gap-3 pt-6">
+        {data.length > 0 ? (
+          data.map((item, i) => (
+            <div
+              key={i}
+              onClick={() => handleClick(item)}
+              className="flex-1 flex flex-col items-center group cursor-pointer relative"
+            >
+              <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 absolute -top-7 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-lg whitespace-nowrap z-30">
+                P{item.label}: {item.val1} Orders / {item.val2}% Margin
+              </div>
 
-        {data.map((d, i) => {
-          const h1 = (d.val1 / maxVal) * 100;
-          const h2 = (d.val2 / maxVal) * 100;
-
-          return (
-            <div key={i} className="flex-1 flex flex-col items-center z-10">
-              <div className="flex items-end space-x-1 h-36 w-full justify-center">
+              <div className="w-full flex items-end justify-center space-x-1.5 h-28">
                 <div
-                  className="w-3.5 bg-blue-600 rounded-t-sm transition-all duration-700 hover:bg-blue-700"
-                  style={{ height: `${h1}%` }}
-                  title={`${series1Name}: ${d.val1}`}
+                  className="w-3 bg-blue-600 rounded-t-sm group-hover:bg-blue-700 shadow-sm"
+                  style={{ height: `${Math.max(8, item.val1)}%` }}
                 />
                 <div
-                  className="w-3.5 bg-orange-400 rounded-t-sm transition-all duration-700 hover:bg-orange-500"
-                  style={{ height: `${h2}%` }}
-                  title={`${series2Name}: ${d.val2}`}
+                  className="w-3 bg-orange-500 rounded-t-sm group-hover:bg-orange-600 shadow-sm"
+                  style={{ height: `${Math.max(8, item.val2)}%` }}
                 />
               </div>
-              <span className="text-[10px] font-bold text-slate-400 mt-2">{d.label}</span>
+              <span className="text-[10px] font-bold text-slate-400 group-hover:text-blue-600 mt-2">{item.label}</span>
             </div>
-          );
-        })}
+          ))
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-slate-400 text-[11px] font-bold">
+            No trend data available for selected period
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center justify-center space-x-6 text-[11px] font-bold">
-        <div className="flex items-center space-x-2">
-          <span className="w-3 h-3 rounded-sm bg-blue-600" />
-          <span className="text-slate-700">{series1Name}</span>
+      <div className="flex items-center justify-center space-x-4 text-[10.5px] font-bold pt-1">
+        <div className="flex items-center space-x-1.5">
+          <span className="w-2.5 h-2.5 bg-blue-600 rounded-sm" />
+          <span className="text-slate-600">{series1Name}</span>
         </div>
-        <div className="flex items-center space-x-2">
-          <span className="w-3 h-3 rounded-sm bg-orange-400" />
-          <span className="text-slate-700">{series2Name}</span>
+        <div className="flex items-center space-x-1.5">
+          <span className="w-2.5 h-2.5 bg-orange-500 rounded-sm" />
+          <span className="text-slate-600">{series2Name}</span>
         </div>
       </div>
     </div>
@@ -355,117 +459,180 @@ export const DualColumnBarChart: React.FC<DualColumnBarChartProps> = ({
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. ROUNDED BAR GRAPH (Account / Sales Growth Graph)
+// 6. ROUNDED BAR GRAPH (Vertical Rounded Top Bars)
 // ─────────────────────────────────────────────────────────────────────────────
 interface RoundedBarGraphProps {
-  data: { month: string; value: number }[];
+  data?: { month: string; value: number }[];
+  onClick?: (data: { title: string; value: string; details: string }) => void;
 }
 
 export const RoundedBarGraph: React.FC<RoundedBarGraphProps> = ({
-  data = [
-    { month: 'Jan', value: 20 },
-    { month: 'Feb', value: 40 },
-    { month: 'Mar', value: 55 },
-    { month: 'Apr', value: 70 },
-    { month: 'May', value: 85 },
-    { month: 'Jun', value: 95 },
-  ],
+  data = [],
+  onClick,
 }) => {
-  const maxVal = Math.max(...data.map((d) => d.value), 100);
+  const handleClick = (item: { month: string; value: number }) => {
+    if (onClick) {
+      onClick({
+        title: `Sales Growth: ${item.month}`,
+        value: `${item.value}% Target Revenue`,
+        details: `Monthly revenue growth for ${item.month} reached ${item.value}% of target milestone.`,
+      });
+    }
+  };
 
   return (
-    <div className="w-full space-y-2">
-      <div className="h-32 flex items-end justify-between px-2 gap-3 border-b border-slate-100 pb-1">
-        {data.map((d, i) => {
-          const h = (d.value / maxVal) * 100;
-          return (
-            <div key={i} className="flex-1 flex flex-col items-center group">
-              <div
-                className="w-full bg-blue-600 rounded-t-xl transition-all duration-700 group-hover:bg-blue-700 shadow-sm"
-                style={{ height: `${h}%` }}
-                title={`${d.month}: ${d.value}`}
-              />
-              <span className="text-[10px] font-bold text-slate-400 mt-2">{d.month}</span>
+    <div className="space-y-2 relative">
+      <div className="h-32 w-full flex items-end justify-between px-1 gap-2 pt-6">
+        {data.length > 0 ? (
+          data.map((item, i) => (
+            <div
+              key={i}
+              onClick={() => handleClick(item)}
+              className="flex-1 flex flex-col items-center group cursor-pointer relative"
+            >
+              <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 absolute -top-7 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-lg whitespace-nowrap z-30">
+                {item.month}: {item.value}% Growth
+              </div>
+
+              <div className="w-full bg-slate-100 rounded-full h-24 flex items-end justify-center p-0.5 overflow-hidden">
+                <div
+                  className="w-full bg-gradient-to-t from-emerald-500 to-teal-400 rounded-full group-hover:from-emerald-600"
+                  style={{ height: `${Math.max(5, item.value)}%` }}
+                />
+              </div>
+              <span className="text-[10px] font-bold text-slate-400 group-hover:text-emerald-600 mt-1.5">{item.month}</span>
             </div>
-          );
-        })}
+          ))
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-slate-400 text-[11px] font-bold">
+            No monthly growth data recorded
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. METRIC SLIDER GAUGE (Interactive Metric Range Track)
+// 7. METRIC SLIDER GAUGE (Range Track with Bubble Node)
 // ─────────────────────────────────────────────────────────────────────────────
 interface MetricSliderGaugeProps {
   percentage?: number;
+  label?: string;
+  onClick?: (data: { title: string; value: string; details: string }) => void;
 }
 
 export const MetricSliderGauge: React.FC<MetricSliderGaugeProps> = ({
-  percentage = 80,
+  percentage = 0,
+  label = 'Stock Ratio Health',
+  onClick,
 }) => {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+  const clampPct = Math.min(100, Math.max(0, percentage));
+
+  const handleClick = () => {
+    if (onClick) {
+      onClick({
+        title: 'Inventory Stock Availability Ratio',
+        value: `${clampPct}% Optimal Stock`,
+        details: `Current warehouse stock health ratio is ${clampPct}%. Calculated directly from active inventory records.`,
+      });
+    }
+  };
 
   return (
-    <div className="w-full space-y-4 py-2">
-      <div className="relative w-full h-8 flex items-center">
-        <div className="w-full h-1 bg-slate-200 rounded-full" />
+    <div
+      onClick={handleClick}
+      className="space-y-3 cursor-pointer group p-1 relative"
+      title="Click for Inventory Ratio Breakdown"
+    >
+      <div className="flex items-center justify-between text-[11px] font-bold">
+        <span className="text-slate-400 uppercase text-[10px]">{label}</span>
+        <span className="text-blue-600 font-black">{clampPct}%</span>
+      </div>
 
-        <div className="absolute inset-0 flex items-center justify-between px-2">
-          {months.map((_, i) => (
-            <div key={i} className="w-0.5 h-3 bg-slate-300 rounded-full" />
-          ))}
-        </div>
+      <div className="relative w-full h-3 bg-slate-100 rounded-full flex items-center px-1">
+        <div
+          className="h-2 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full"
+          style={{ width: `${clampPct}%` }}
+        />
 
         <div
-          className="absolute z-10 flex items-center justify-center w-9 h-9 bg-blue-600 text-white rounded-full font-black text-[11px] shadow-lg shadow-blue-500/30 transform -translate-x-1/2 cursor-pointer border-2 border-white"
-          style={{ left: `${percentage}%` }}
+          className="absolute w-5 h-5 bg-white border-2 border-blue-600 rounded-full shadow-md transform -translate-x-1/2 flex items-center justify-center"
+          style={{ left: `${clampPct}%` }}
         >
-          {percentage}
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-[10.5px] font-bold text-slate-400 px-1">
-        {months.map((m, i) => (
-          <span key={i} className={m === 'Apr' ? 'text-blue-600 font-extrabold' : ''}>
-            {m}
-          </span>
-        ))}
+      <div className="flex justify-between text-[9.5px] font-bold text-slate-400 px-1">
+        <span>0% Critical</span>
+        <span>50% Moderate</span>
+        <span>100% Healthy</span>
       </div>
     </div>
   );
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. MULTI METRIC BAR SERIES (Weekly Payment / Activity Bar Series)
+// 8. MULTI-METRIC VERTICAL BAR SERIES
 // ─────────────────────────────────────────────────────────────────────────────
+interface DayMetric {
+  day: string;
+  height: number;
+  hasNode?: boolean;
+}
+
 interface MultiMetricBarSeriesProps {
-  days?: { day: string; height: number; hasNode?: boolean }[];
+  days?: DayMetric[];
+  onClick?: (data: { title: string; value: string; details: string }) => void;
 }
 
 export const MultiMetricBarSeries: React.FC<MultiMetricBarSeriesProps> = ({
-  days = [
-    { day: 'Mon', height: 40, hasNode: true },
-    { day: 'Tue', height: 75, hasNode: false },
-    { day: 'Wed', height: 60, hasNode: true },
-    { day: 'Thu', height: 90, hasNode: false },
-    { day: 'Fri', height: 85, hasNode: true },
-    { day: 'Sat', height: 50, hasNode: false },
-    { day: 'Sun', height: 65, hasNode: true },
-  ],
+  days = [],
+  onClick,
 }) => {
+  const handleClick = (d: DayMetric) => {
+    if (onClick) {
+      onClick({
+        title: `Weekly Order Distribution: ${d.day}`,
+        value: `${d.height}% Traffic Peak`,
+        details: `Order & payment channel traffic on ${d.day} reached ${d.height}% of weekly peak capacity.`,
+      });
+    }
+  };
+
   return (
-    <div className="w-full h-36 flex items-end justify-between px-1 gap-2 border-b border-slate-100 pb-1">
-      {days.map((d, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center group">
-          <div className="relative w-2.5 bg-blue-600 rounded-full flex flex-col items-center justify-start transition-all duration-700 group-hover:bg-blue-700" style={{ height: `${d.height}%` }}>
-            {d.hasNode && (
-              <span className="w-2 h-2 rounded-full bg-white border border-blue-600 absolute -top-1 shadow-sm" />
-            )}
+    <div className="space-y-3 relative">
+      <div className="h-32 w-full flex items-end justify-between px-1 gap-2 pt-6">
+        {days.length > 0 ? (
+          days.map((d, i) => (
+            <div
+              key={i}
+              onClick={() => handleClick(d)}
+              className="flex-1 flex flex-col items-center group cursor-pointer relative"
+            >
+              <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 absolute -top-7 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-lg whitespace-nowrap z-30">
+                {d.day}: {d.height}% Volume
+              </div>
+
+              <div className="w-full flex justify-center h-24 items-end relative">
+                <div
+                  className="w-2.5 bg-purple-500 rounded-t-sm group-hover:bg-purple-600 shadow-sm"
+                  style={{ height: `${Math.max(8, d.height)}%` }}
+                />
+                {d.hasNode && (
+                  <span className="absolute top-0 w-2.5 h-2.5 bg-orange-500 rounded-full border border-white shadow-sm" />
+                )}
+              </div>
+              <span className="text-[10px] font-bold text-slate-400 group-hover:text-purple-600 mt-1.5">{d.day}</span>
+            </div>
+          ))
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-slate-400 text-[11px] font-bold">
+            No weekly distribution data
           </div>
-          <span className="text-[9.5px] font-bold text-slate-400 mt-2">{d.day}</span>
-        </div>
-      ))}
+        )}
+      </div>
     </div>
   );
 };
