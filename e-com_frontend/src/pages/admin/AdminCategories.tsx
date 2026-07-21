@@ -16,9 +16,9 @@ import {
   BookOpen,
   ArrowLeft,
 } from 'lucide-react';
-import sleeveImg from '../../assets/products/laptop_sleeve_leather.jpg';
 import { categoryService } from '../../services/category.service';
 import type { CategoryImagePayload } from '../../services/category.service';
+import { getImageUrl } from '../../utils/imageHelper';
 
 interface CategoryItem {
   id: string;
@@ -195,6 +195,8 @@ const SafeImage: React.FC<{ src: string; alt: string; className?: string; imgCla
     setError(false);
   }, [src]);
 
+  const resolvedSrc = getImageUrl({ image: src, name: alt });
+
   return (
     <div className={`relative ${className} bg-slate-50 flex-shrink-0 overflow-hidden`}>
       {!loaded && !error && (
@@ -202,19 +204,13 @@ const SafeImage: React.FC<{ src: string; alt: string; className?: string; imgCla
           <div className="w-full h-full bg-slate-100 animate-pulse" />
         </div>
       )}
-      {error ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-50 text-slate-350">
-          <BookOpen className="w-5 h-5 stroke-[1.5]" />
-        </div>
-      ) : (
-        <img
-          src={src}
-          alt={alt}
-          onLoad={() => setLoaded(true)}
-          onError={() => setError(true)}
-          className={`${imgClassName} transition-opacity duration-300 ease-in-out ${loaded ? 'opacity-100' : 'opacity-0 absolute'}`}
-        />
-      )}
+      <img
+        src={error ? getImageUrl({ name: alt }) : resolvedSrc}
+        alt={alt}
+        onLoad={() => setLoaded(true)}
+        onError={() => setError(true)}
+        className={`${imgClassName} transition-opacity duration-300 ease-in-out ${loaded || error ? 'opacity-100' : 'opacity-0 absolute'}`}
+      />
     </div>
   );
 };
@@ -295,14 +291,7 @@ const AdminCategories: React.FC<AdminCategoriesProps> = ({ mode = 'list' }) => {
 
   // Map backend object to CategoryItem
   const mapCategoryToItem = (item: any): CategoryItem => {
-    let imageUrl = sleeveImg;
-    if (item.image) {
-      if (typeof item.image === 'string') {
-        imageUrl = item.image;
-      } else if (typeof item.image === 'object' && item.image.url) {
-        imageUrl = item.image.url;
-      }
-    }
+    let imageUrl = getImageUrl(item);
     
     return {
       id: item.id || item.categoryId || '',

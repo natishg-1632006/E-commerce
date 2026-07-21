@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AdminLayout } from '../../layouts/AdminLayout';
-import { InventoryTableSkeleton, DetailPageSkeleton, SafeImage } from '../../components/admin/AdminSkeletons';
+import { InventoryTableSkeleton, DetailPageSkeleton } from '../../components/admin/AdminSkeletons';
 import {
   AlertTriangle,
   Search,
@@ -787,7 +787,6 @@ const AdminInventory: React.FC = () => {
                           >
                             {/* 1. Product */}
                             <div className="flex items-center space-x-2.5 w-full sm:w-auto min-w-0">
-                              <div className="w-11 h-11 rounded-lg bg-slate-200 animate-pulse flex-shrink-0" />
                               <div className="min-w-0 flex-1 space-y-1.5">
                                 <div className="h-3.5 bg-slate-200 animate-pulse rounded w-4/5" />
                                 <div className="h-2.5 bg-slate-200 animate-pulse rounded w-1/3" />
@@ -824,9 +823,8 @@ const AdminInventory: React.FC = () => {
                             className="flex flex-col sm:grid gap-2 sm:gap-3 items-start sm:items-center p-3.5 sm:p-2.5 rounded-xl border border-slate-100 cursor-pointer transition-all duration-200 hover:border-blue-150 hover:bg-slate-50/40 hover:shadow-sm bg-white"
                             style={gridStyle}
                           >
-                            {/* 1. Product Details (image resized to 44x44, title truncated to 1 line) */}
+                            {/* 1. Product Details (title truncated to 1 line) */}
                             <div className="flex items-center space-x-2.5 w-full sm:w-auto min-w-0">
-                              <SafeImage src={p.img} alt={p.name} className="w-11 h-11 rounded-lg overflow-hidden border border-slate-100 flex-shrink-0" />
                               <div className="min-w-0 flex-1">
                                 <div className="text-[12px] font-bold text-slate-855 truncate whitespace-nowrap leading-tight" title={p.name}>
                                   {p.name}
@@ -925,7 +923,6 @@ const AdminInventory: React.FC = () => {
                 
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                   <div className="flex items-center space-x-3">
-                    <SafeImage src={editingItem.img} alt={editingItem.name} className="w-12 h-12 rounded-xl border border-slate-200" />
                     <h1 className="text-2xl font-black text-slate-900 tracking-tight leading-tight">{editingItem.name}</h1>
                   </div>
                   <InventoryStatusBadge status={editingItem.status} />

@@ -19,9 +19,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-import ssdImg from '../assets/products/samsung_t7_ssd.jpg';
-import sleeveImg from '../assets/products/laptop_sleeve_leather.jpg';
-import matImg from '../assets/products/premium_desk_mat.jpg';
+import { getImageUrl } from '../utils/imageHelper';
 
 const formatDatetime = (isoString?: string) => {
   if (!isoString) return '—';
@@ -441,7 +439,7 @@ export const OrderDetails: React.FC = () => {
               const specsText = item.specifications
                 ? Object.entries(item.specifications).map(([_, v]) => `${v}`).join(' • ')
                 : '';
-              const finalImage = catalogProd?.images?.[0]?.url || item.image || SSDImgFallback(item.name);
+              const finalImage = getImageUrl(catalogProd || item);
 
               return (
                 <div key={idx} className="flex items-center space-x-4 py-4 first:pt-0 last:pb-0 group">
@@ -540,10 +538,3 @@ export const OrderDetails: React.FC = () => {
     </MainLayout>
   );
 };
-
-function SSDImgFallback(name: string) {
-  const lowercaseName = name.toLowerCase();
-  if (lowercaseName.includes('mat')) return matImg;
-  if (lowercaseName.includes('sleeve')) return sleeveImg;
-  return ssdImg;
-}

@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { productService } from '../../services/product.service';
 import { AdminLayout } from '../../layouts/AdminLayout';
 import { ProductsTableSkeleton, DetailPageSkeleton, SafeImage } from '../../components/admin/AdminSkeletons';
+import { getImageUrl } from '../../utils/imageHelper';
 import {
   Search,
   Plus,
@@ -31,7 +32,6 @@ import {
   Star,
   AlertTriangle,
 } from 'lucide-react';
-import macbookImg from '../../assets/products/macbook.jpg';
 
 interface ProductImage {
   imageUrl: string;
@@ -573,24 +573,26 @@ const AdminProducts: React.FC = () => {
     let imagesArr: ProductImage[] = [];
     if (p.images && Array.isArray(p.images)) {
       imagesArr = p.images.map((img: any) => ({
-        imageUrl: typeof img === 'string' ? img : (img.imageUrl || img.url || ''),
+        imageUrl: getImageUrl(typeof img === 'string' ? img : (img.imageUrl || img.url || '')),
         key: typeof img === 'string' ? img : (img.key || '')
       }));
     } else if (p.img) {
-      imagesArr = [{ imageUrl: p.img, key: 'main-img' }];
+      imagesArr = [{ imageUrl: getImageUrl(p.img), key: 'main-img' }];
     } else if (p.images && typeof p.images === 'string') {
       try {
         const parsed = JSON.parse(p.images);
         if (Array.isArray(parsed)) {
           imagesArr = parsed.map((img: any) => ({
-            imageUrl: typeof img === 'string' ? img : (img.imageUrl || img.url || ''),
+            imageUrl: getImageUrl(typeof img === 'string' ? img : (img.imageUrl || img.url || '')),
             key: typeof img === 'string' ? img : (img.key || '')
           }));
         }
       } catch (e) {
-        imagesArr = [{ imageUrl: p.images, key: 'main-img' }];
+        imagesArr = [{ imageUrl: getImageUrl(p.images), key: 'main-img' }];
       }
     }
+
+    const firstImage = imagesArr[0]?.imageUrl || getImageUrl(p);
 
     return {
       id: p.id || p.productId || '',
@@ -603,7 +605,7 @@ const AdminProducts: React.FC = () => {
       stock: p.stock !== undefined ? p.stock : (p.inventoryCount !== undefined ? p.inventoryCount : 0),
       status: p.status || 'ACTIVE',
       featured: !!p.featured,
-      img: imagesArr[0]?.imageUrl || p.img || macbookImg,
+      img: firstImage,
       description: p.description || '',
       images: imagesArr,
       specifications: p.specifications || {},
@@ -1142,7 +1144,7 @@ const AdminProducts: React.FC = () => {
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full bg-gradient-to-tr from-blue-500/10 to-indigo-500/5 blur-3xl" />
             {uploadedImages.length > 0 ? (
               <SafeImage
-                src={uploadedImages[activePreviewImageIdx]?.imageUrl || uploadedImages[0]?.imageUrl}
+                src={getImageUrl(uploadedImages[activePreviewImageIdx]?.imageUrl || uploadedImages[0]?.imageUrl)}
                 alt={name}
                 className="w-full h-full relative z-10"
                 imgClassName="w-full h-full object-contain"
@@ -1165,7 +1167,7 @@ const AdminProducts: React.FC = () => {
                     activePreviewImageIdx === idx ? 'border-blue-600 shadow' : 'border-slate-100 hover:border-slate-200'
                   }`}
                 >
-                  <img src={img.imageUrl} alt="preview-thumb" className="w-full h-full object-contain rounded-lg" />
+                  <img src={getImageUrl(img.imageUrl)} alt="preview-thumb" className="w-full h-full object-contain rounded-lg" />
                 </button>
               ))}
             </div>
@@ -2009,7 +2011,7 @@ const AdminProducts: React.FC = () => {
                               key={img.key}
                               className="group relative aspect-square bg-slate-50 rounded-2xl overflow-hidden border border-slate-150 flex items-center justify-center p-2.5 shadow-sm hover:shadow transition-shadow"
                             >
-                              <img src={img.imageUrl} alt={`asset-${idx}`} className="w-full h-full object-contain rounded-lg" />
+                              <img src={getImageUrl(img.imageUrl)} alt={`asset-${idx}`} className="w-full h-full object-contain rounded-lg" />
                               
                               {/* Primary image badge */}
                               {idx === 0 && (
@@ -2129,7 +2131,7 @@ const AdminProducts: React.FC = () => {
                       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full bg-gradient-to-tr from-blue-500/10 to-indigo-500/5 blur-2xl" />
                       {uploadedImages.length > 0 ? (
                         <SafeImage
-                          src={uploadedImages[0].imageUrl}
+                          src={getImageUrl(uploadedImages[0]?.imageUrl)}
                           alt="Preview"
                           className="w-full h-full relative z-10"
                           imgClassName="w-full h-full object-contain"

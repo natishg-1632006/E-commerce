@@ -30,13 +30,10 @@ import { useDispatch, useSelector } from 'react-redux';
 import { addToCartBackend } from '../store/cartSlice';
 import type { RootState, AppDispatch } from '../store';
 
-import macbookImg from '../assets/products/macbook.jpg';
-import rogImg from '../assets/products/rog.jpg';
-import dellImg from '../assets/products/dell.jpg';
-import guideImg from '../assets/products/guide.jpg';
 import heroBannerImg from '../assets/future_tech_banner.jpg';
 
 import { productService } from '../services/product.service';
+import { getImageUrl } from '../utils/imageHelper';
 
 const formatCategoryName = (name: string) => {
   if (!name) return '';
@@ -378,15 +375,7 @@ export const Marketplace: React.FC = () => {
   };
 
   const getProductImage = (product: any) => {
-    if (product.images && product.images.length > 0) {
-      return product.images[0].url;
-    }
-    // Fallbacks
-    const name = (product.name || '').toLowerCase();
-    if (name.includes('macbook')) return macbookImg;
-    if (name.includes('zephyrus') || name.includes('tuf') || name.includes('rog')) return rogImg;
-    if (name.includes('xps') || name.includes('latitude') || name.includes('precision')) return dellImg;
-    return guideImg;
+    return getImageUrl(product);
   };
 
   const getCategoryIcon = (name: string) => {
@@ -665,7 +654,7 @@ export const Marketplace: React.FC = () => {
               ) : (
                 categoriesList.slice(0, 3).map((cat) => {
                   const IconComponent = getCategoryIcon(cat.name);
-                  const imgUrl = cat.image ? (typeof cat.image === 'string' ? cat.image : cat.image.url) : null;
+                  const imgUrl = getImageUrl(cat);
                   return (
                     <button
                       key={cat.categoryId || cat.id}
@@ -776,11 +765,11 @@ export const Marketplace: React.FC = () => {
                       onClick={() => navigate(`/product/${prod.productId || prod.id}`)}
                       className="group relative bg-white border border-slate-200/60 rounded-[30px] p-4 flex flex-col justify-between hover:shadow-[0_24px_50px_rgba(15,23,42,0.04)] hover:-translate-y-1 transition-all duration-350 select-none text-left cursor-pointer"
                     >
-                      <div className="relative aspect-[4/3] w-full rounded-[22px] overflow-hidden bg-slate-50 flex items-center justify-center mb-4">
+                      <div className="relative aspect-[4/3] w-full rounded-[22px] overflow-hidden bg-slate-50/70 p-2 sm:p-2.5 flex items-center justify-center mb-4">
                         <img
                           src={imgUrl}
                           alt={prod.name}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
+                          className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                         />
                       </div>
                       <div className="flex flex-col flex-grow justify-between text-left">
@@ -989,11 +978,11 @@ export const Marketplace: React.FC = () => {
                       onClick={() => navigate(`/product/${prod.productId || prod.id}`)}
                       className="p-3.5 rounded-[28px] border border-slate-200/50 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.02)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.06)] hover:-translate-y-1 transition-all duration-350 flex flex-col justify-between items-stretch overflow-hidden group cursor-pointer"
                     >
-                      <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-50/30 overflow-hidden flex items-center justify-center flex-shrink-0">
+                      <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-50/70 p-2 sm:p-2.5 overflow-hidden flex items-center justify-center flex-shrink-0">
                         <img
                           src={imgUrl}
                           alt={prod.name}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
+                          className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                         />
                       </div>
                       <div className="flex flex-col flex-grow justify-between text-left mt-3">

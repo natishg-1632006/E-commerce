@@ -9,8 +9,8 @@ import { useClickOutside } from '../../../hooks/useClickOutside';
 import { useSelector, useDispatch } from 'react-redux';
 import type { RootState, AppDispatch } from '../../../store';
 import { fetchCart } from '../../../store/cartSlice';
-import guideImg from '../../../assets/products/guide.jpg';
 import { productService } from '../../../services/product.service';
+import { getImageUrl } from '../../../utils/imageHelper';
 
 const formatCategoryName = (name: string) => {
   if (!name) return '';
@@ -173,7 +173,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : (
                 <div className="w-full grid grid-cols-2 gap-4">
                   {categoriesList.map((cat) => {
-                    const catImage = cat.image?.url || guideImg;
+                    const catImage = getImageUrl(cat);
                     return (
                       <Link
                         key={cat.categoryId}

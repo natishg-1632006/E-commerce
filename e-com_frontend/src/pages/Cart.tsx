@@ -32,6 +32,7 @@ import toast from 'react-hot-toast';
 import { cn } from '../lib/cn';
 
 import { productService } from '../services/product.service';
+import { getImageUrl } from '../utils/imageHelper';
 
 // Import local images
 import macbookImg from '../assets/products/macbook.jpg';
@@ -39,7 +40,6 @@ import ssdImg from '../assets/products/samsung_t7_ssd.jpg';
 import sleeveImg from '../assets/products/laptop_sleeve_leather.jpg';
 import matImg from '../assets/products/premium_desk_mat.jpg';
 import emptyCartImg from '../assets/products/empty_shopping_cart.jpg';
-import guideImg from '../assets/products/guide.jpg';
 
 export const Cart: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -135,7 +135,7 @@ export const Cart: React.FC = () => {
 
   // Helper helper to enrich the items with custom properties dynamically from backend data
   const enrichCartItem = (item: any) => {
-    const image = item.image || item.imageUrl || (item.images && item.images.length > 0 ? (item.images[0].url || item.images[0].imageUrl) : null) || guideImg;
+    const image = getImageUrl(item);
     const ram = item.specifications?.ram || item.specifications?.RAM || item.ram || '';
     const storage = item.specifications?.storage || item.specifications?.Storage || item.storage || '';
     const specs = ram && storage ? `${ram} • ${storage}` : (ram || storage || 'Standard');
@@ -209,7 +209,7 @@ export const Cart: React.FC = () => {
 
     // Map first 3 catalog products as accessories
     return catalogProducts.slice(0, 3).map(prod => {
-      const image = prod.image || prod.imageUrl || (prod.images && prod.images.length > 0 ? (prod.images[0].url || prod.images[0].imageUrl) : null) || guideImg;
+      const image = getImageUrl(prod);
       const ram = prod.specifications?.ram || prod.specifications?.RAM || prod.ram || 'Standard';
       const storage = prod.specifications?.storage || prod.specifications?.Storage || prod.storage || 'Standard';
       const listPrice = prod.listPrice || (prod.discount ? Math.round(prod.price / (1 - prod.discount / 100)) : prod.price);
@@ -253,7 +253,7 @@ export const Cart: React.FC = () => {
 
     // Map catalog products as recommendations
     return catalogProducts.map(prod => {
-      const image = prod.image || prod.imageUrl || (prod.images && prod.images.length > 0 ? (prod.images[0].url || prod.images[0].imageUrl) : null) || guideImg;
+      const image = getImageUrl(prod);
       const ram = prod.specifications?.ram || prod.specifications?.RAM || prod.ram || 'Standard';
       const storage = prod.specifications?.storage || prod.specifications?.Storage || prod.storage || 'Standard';
       const listPrice = prod.listPrice || (prod.discount ? Math.round(prod.price / (1 - prod.discount / 100)) : prod.price);
@@ -430,8 +430,8 @@ export const Cart: React.FC = () => {
                         <div className="flex items-start justify-between gap-3 sm:gap-4 w-full">
                           {/* Image & Title Details */}
                           <div className="flex items-start space-x-3.5 flex-1 min-w-0">
-                            <div className="w-16 h-16 sm:w-22 sm:h-22 rounded-xl sm:rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center flex-shrink-0">
-                              <img src={enriched.image} alt={enriched.name} className="w-full h-full object-cover" />
+                            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl bg-slate-50/70 border border-slate-100/80 overflow-hidden flex items-center justify-center p-1.5 flex-shrink-0">
+                              <img src={enriched.image} alt={enriched.name} className="w-full h-full object-contain" />
                             </div>
                             <div className="flex-grow min-w-0 flex flex-col text-left">
                               <span className="text-[9px] sm:text-[10px] font-black text-blue-600 tracking-wider uppercase">
@@ -539,11 +539,11 @@ export const Cart: React.FC = () => {
                         className="p-3.5 rounded-[28px] border border-slate-200/50 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.02)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.06)] hover:-translate-y-1 transition-all duration-350 flex flex-col justify-between items-stretch overflow-hidden group cursor-pointer"
                       >
                         {/* Thumbnail image */}
-                        <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-50/30 overflow-hidden flex items-center justify-center flex-shrink-0">
+                        <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-50/70 p-2 sm:p-2.5 overflow-hidden flex items-center justify-center flex-shrink-0">
                           <img
                             src={acc.image}
                             alt={acc.name}
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
+                            className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                           />
                         </div>
 
@@ -813,11 +813,11 @@ export const Cart: React.FC = () => {
                     className="p-3.5 rounded-[28px] border border-slate-200/50 bg-white/95 shadow-[0_8px_30px_rgba(15,23,42,0.02)] hover:shadow-[0_20px_40px_rgba(15,23,42,0.06)] hover:-translate-y-1 transition-all duration-350 flex flex-col justify-between items-stretch overflow-hidden group cursor-pointer"
                   >
                     {/* Thumbnail image */}
-                    <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-50/30 overflow-hidden flex items-center justify-center flex-shrink-0">
+                    <div className="relative w-full aspect-[4/3] rounded-[22px] bg-slate-50/70 p-2 sm:p-2.5 overflow-hidden flex items-center justify-center flex-shrink-0">
                       <img
                         src={prod.image}
                         alt={prod.name}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
+                        className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                       />
                       {prod.saleBadge && (
                         <div className="absolute top-3 left-3 bg-white border border-red-500/80 text-red-550 font-black text-[9.5px] tracking-wide uppercase px-2.5 py-0.5 rounded-full shadow-sm">

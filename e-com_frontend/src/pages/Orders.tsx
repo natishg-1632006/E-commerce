@@ -29,6 +29,7 @@ import ssdImg from '../assets/products/samsung_t7_ssd.jpg';
 import sleeveImg from '../assets/products/laptop_sleeve_leather.jpg';
 import matImg from '../assets/products/premium_desk_mat.jpg';
 import guideImg from '../assets/products/guide.jpg';
+import { getImageUrl } from '../utils/imageHelper';
 
 
 
@@ -238,7 +239,7 @@ export const Orders: React.FC = () => {
         ? `${mainItem.name}${items.length > 1 ? ` + ${items.length - 1} more` : ''}`
         : 'Tech Purchase';
 
-      const image = mainItem.image || mainItem.imageUrl || guideImg;
+      const image = getImageUrl(mainItem);
       const brand = mainItem.brand || 'Premium';
       const ram = mainItem.specifications?.ram || mainItem.specifications?.RAM || '';
       const storage = mainItem.specifications?.storage || mainItem.specifications?.Storage || '';
@@ -390,7 +391,7 @@ export const Orders: React.FC = () => {
 
     return catalogProducts.slice(0, 4).map((prod, idx) => {
       const def = defaultAccs[idx] || defaultAccs[0];
-      const image = prod.image || prod.imageUrl || (prod.images && prod.images.length > 0 ? (prod.images[0].url || prod.images[0].imageUrl) : null) || def.image;
+      const image = getImageUrl(prod);
       const ram = prod.specifications?.ram || prod.specifications?.RAM || prod.ram || 'Standard';
       const storage = prod.specifications?.storage || prod.specifications?.Storage || prod.storage || 'Standard';
       const listPrice = prod.listPrice || (prod.discount ? Math.round(prod.price / (1 - prod.discount / 100)) : prod.price);
@@ -991,11 +992,11 @@ export const Orders: React.FC = () => {
                     className="group relative bg-white border border-slate-200/60 rounded-[30px] p-4 flex flex-col justify-between hover:shadow-[0_24px_50px_rgba(15,23,42,0.04)] hover:-translate-y-1 transition-all duration-350 select-none text-left"
                   >
                     {/* Thumbnail box */}
-                    <div className="relative aspect-[4/3] w-full rounded-[22px] overflow-hidden bg-slate-50 flex items-center justify-center mb-4">
+                    <div className="relative aspect-[4/3] w-full rounded-[22px] overflow-hidden bg-slate-50/70 p-2 sm:p-2.5 flex items-center justify-center mb-4">
                       <img
                         src={acc.image}
                         alt={acc.name}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
+                        className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                       />
                     </div>
 

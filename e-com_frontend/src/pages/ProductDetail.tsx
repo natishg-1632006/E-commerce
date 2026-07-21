@@ -25,14 +25,13 @@ import { cn } from '../lib/cn';
 import toast from 'react-hot-toast';
 
 import macbookImg from '../assets/products/macbook.jpg';
-import rogImg from '../assets/products/rog.jpg';
-import dellImg from '../assets/products/dell.jpg';
 import ssdImg from '../assets/products/samsung_t7_ssd.jpg';
 import sleeveImg from '../assets/products/laptop_sleeve_leather.jpg';
 import matImg from '../assets/products/premium_desk_mat.jpg';
 import guideImg from '../assets/products/guide.jpg';
 
 import { productService } from '../services/product.service';
+import { getImageUrl } from '../utils/imageHelper';
 
 const formatCategoryName = (name: string) => {
   if (!name) return '';
@@ -140,19 +139,12 @@ export const ProductDetail: React.FC = () => {
   };
 
   const getProductImage = (prod: any) => {
-    if (prod.images && prod.images.length > 0) {
-      return prod.images[0].url;
-    }
-    const name = (prod.name || '').toLowerCase();
-    if (name.includes('macbook')) return macbookImg;
-    if (name.includes('zephyrus') || name.includes('tuf') || name.includes('rog')) return rogImg;
-    if (name.includes('xps') || name.includes('latitude') || name.includes('precision')) return dellImg;
-    return guideImg;
+    return getImageUrl(prod);
   };
 
   const getThumbnails = (prod: any) => {
-    if (prod.images && prod.images.length > 0) {
-      return prod.images.map((img: any) => img.url);
+    if (prod.images && Array.isArray(prod.images) && prod.images.length > 0) {
+      return prod.images.map((img: any) => getImageUrl(img));
     }
     const fallback = getProductImage(prod);
     return [fallback, guideImg, macbookImg];

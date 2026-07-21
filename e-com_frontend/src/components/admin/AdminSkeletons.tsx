@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Image as ImageIcon } from 'lucide-react';
+import { getImageUrl } from '../../utils/imageHelper';
 
 const ShimmerStyle: React.FC = () => (
   <style>{`
@@ -503,9 +503,13 @@ export const SafeImage: React.FC<{
   alt: string;
   className?: string;
   imgClassName?: string;
-}> = ({ src, alt, className = '', imgClassName = 'w-full h-full object-cover' }) => {
+  fallback?: string;
+}> = ({ src, alt, className = '', imgClassName = 'w-full h-full object-contain p-0.5', fallback }) => {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+
+  const resolvedSrc = src && src.trim() !== '' ? src : getImageUrl({ name: alt });
+  const fallbackSrc = fallback || getImageUrl({ name: alt });
 
   useEffect(() => {
     setLoaded(false);
@@ -518,19 +522,15 @@ export const SafeImage: React.FC<{
       {!loaded && !error && (
         <div className="absolute inset-0 ske-base" />
       )}
-      {error ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-50 text-slate-300">
-          <ImageIcon className="w-5 h-5 stroke-[1.5]" />
-        </div>
-      ) : (
-        <img
-          src={src}
-          alt={alt}
-          onLoad={() => setLoaded(true)}
-          onError={() => setError(true)}
-          className={`${imgClassName} transition-opacity duration-300 ease-in-out ${loaded ? 'opacity-100' : 'opacity-0 absolute'}`}
-        />
-      )}
+      <img
+        src={error ? fallbackSrc : resolvedSrc}
+        alt={alt}
+        onLoad={() => setLoaded(true)}
+        onError={() => {
+          if (!error) setError(true);
+        }}
+        className={`${imgClassName} transition-opacity duration-300 ease-in-out ${loaded || error ? 'opacity-100' : 'opacity-0 absolute'}`}
+      />
     </div>
   );
 };

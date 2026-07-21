@@ -28,8 +28,7 @@ import { paymentService } from '../services/payment.service';
 import { orderService } from '../services/order.service';
 import { couponService } from '../services/coupon.service';
 import { productService } from '../services/product.service';
-
-import guideImg from '../assets/products/guide.jpg';
+import { getImageUrl } from '../utils/imageHelper';
 
 export const Checkout: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -288,7 +287,7 @@ export const Checkout: React.FC = () => {
 
   // Enrich items with specs and images directly from backend data
   const enrichCartItem = (item: any) => {
-    const image = item.image || item.imageUrl || (item.images && item.images.length > 0 ? (item.images[0].url || item.images[0].imageUrl) : null) || guideImg;
+    const image = getImageUrl(item);
     const ram = item.specifications?.ram || item.specifications?.RAM || item.ram || '';
     const storage = item.specifications?.storage || item.specifications?.Storage || item.storage || '';
     const specs = ram && storage ? `${ram} • ${storage}` : (ram || storage || 'Standard');
