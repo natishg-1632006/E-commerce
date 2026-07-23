@@ -378,7 +378,7 @@ export const Checkout: React.FC = () => {
         email: emailAddress,
         shippingAddress,
         paymentMethod: mappedMethod,
-        couponCode: appliedCoupon ? appliedCoupon.couponCode : null,
+        couponCode: appliedCoupon ? appliedCoupon.couponCode : undefined,
       });
 
       const createdOrderId = order.orderId;
@@ -389,7 +389,10 @@ export const Checkout: React.FC = () => {
       toast.success('Order placed successfully!');
     } catch (err: any) {
       console.error('Error placing order:', err);
-      const errMsg = err.response?.data?.message || err.message || 'Failed to place order.';
+      const backendMsg = err.response?.data?.message || err.response?.data?.error || err.response?.data?.errors;
+      const errMsg = Array.isArray(backendMsg)
+        ? backendMsg.join(', ')
+        : (typeof backendMsg === 'object' ? JSON.stringify(backendMsg) : (backendMsg || err.message || 'Failed to place order.'));
       toast.error(errMsg);
     } finally {
       setIsLoading(false);
