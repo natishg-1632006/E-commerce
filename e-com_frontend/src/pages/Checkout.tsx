@@ -19,7 +19,8 @@ import {
   AlertCircle,
   Tag,
   CheckCircle,
-  Loader2
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 import { cn } from '../lib/cn';
 import toast from 'react-hot-toast';
@@ -44,6 +45,8 @@ export const Checkout: React.FC = () => {
   // Stepper state: 2 = Checkout (Shipping/Delivery), 3 = Payment, 4 = Confirmation
   const [activeStep, setActiveStep] = useState(2);
   const [isLoading, setIsLoading] = useState(true);
+  const [paymentPending, setPaymentPending] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
 
   // Shipping form fields
   const [fullName, setFullName] = useState('');
@@ -382,11 +385,20 @@ export const Checkout: React.FC = () => {
       });
 
       const createdOrderId = order.orderId;
-      await paymentService.createPayment(createdOrderId, mappedMethod);
-
       setOrderId(createdOrderId);
-      setActiveStep(4);
-      toast.success('Order placed successfully!');
+      dispatch(clearCart()); // Clear local cart state immediately upon successful order creation in backend
+
+      try {
+        await paymentService.createPayment(createdOrderId, mappedMethod);
+        setPaymentPending(false);
+        setActiveStep(4);
+        toast.success('Order placed successfully!');
+      } catch (payErr: any) {
+        console.error('Payment failed during checkout:', payErr);
+        setPaymentPending(true);
+        setActiveStep(4);
+        toast('Order created, but online payment is pending. Please complete your payment.', { icon: '⚠️' });
+      }
     } catch (err: any) {
       console.error('Error placing order:', err);
       const backendMsg = err.response?.data?.message || err.response?.data?.error || err.response?.data?.errors;
@@ -476,16 +488,28 @@ export const Checkout: React.FC = () => {
 
         {activeStep === 4 ? (
           /* Step 4: Confirmation screen */
-          <div className="max-w-xl w-full mx-auto bg-white rounded-[24px] border border-slate-200/60 p-8 md:p-12 text-center shadow-[0_8px_30px_rgb(0,0,0,0.015)] space-y-6">
-            <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto border border-emerald-100 relative">
-              <div className="absolute inset-0 rounded-full bg-emerald-500/10 animate-ping duration-1000 scale-95" />
-              <Check className="w-10 h-10 text-emerald-600 stroke-[3.5px]" />
-            </div>
+          <div className="max-w-xl w-full mx-auto bg-white rounded-[24px] border border-slate-200/60 p-8 md:p-12 text-center shadow-[0_8px_30px_rgb(0,0,0,0.015)] space-y-6 animate-fadeIn">
+            {paymentPending ? (
+              <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto border border-amber-100 relative">
+                <div className="absolute inset-0 rounded-full bg-amber-500/10 animate-ping duration-1000 scale-95" />
+                <AlertTriangle className="w-10 h-10 text-amber-600 stroke-[2px]" />
+              </div>
+            ) : (
+              <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto border border-emerald-100 relative">
+                <div className="absolute inset-0 rounded-full bg-emerald-500/10 animate-ping duration-1000 scale-95" />
+                <Check className="w-10 h-10 text-emerald-600 stroke-[3.5px]" />
+              </div>
+            )}
 
             <div className="space-y-2">
-              <h2 className="text-2xl font-black text-slate-855 tracking-tight">Order Placed Successfully!</h2>
+              <h2 className="text-2xl font-black text-slate-855 tracking-tight">
+                {paymentPending ? 'Order Created (Payment Pending)' : 'Order Placed Successfully!'}
+              </h2>
               <p className="text-slate-500 text-xs font-semibold leading-relaxed font-sans">
-                Thank you for shopping with NatCart. Your order details and tracking link have been sent to <span className="text-slate-800 font-bold">{emailAddress || 'your email'}</span>.
+                {paymentPending
+                  ? `Your order has been created, but payment is pending. Please complete your payment now to reserve the items, or continue to pay later from your My Orders page.`
+                  : `Thank you for shopping with NatCart. Your order details and tracking link have been sent to ${emailAddress || 'your email'}.`
+                }
               </p>
             </div>
 
@@ -499,19 +523,59 @@ export const Checkout: React.FC = () => {
                 <span className="text-slate-800 font-black">3-5 Business Days</span>
               </div>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-455 font-bold">Total Paid</span>
+                <span className="text-slate-455 font-bold">{paymentPending ? 'Total Amount' : 'Total Paid'}</span>
                 <Price value={total} className="text-sm font-black text-slate-900" />
               </div>
             </div>
 
-            <Button
-              variant="primary"
-              size="lg"
-              className="w-full rounded-2xl font-black text-xs h-12 shadow cursor-pointer active:scale-98 transition-all"
-              onClick={handleFinish}
-            >
-              Continue Shopping
-            </Button>
+            {paymentPending ? (
+              <div className="space-y-3">
+                <Button
+                  variant="primary"
+                  size="lg"
+                  disabled={isPaying}
+                  className="w-full rounded-2xl font-black text-xs h-12 shadow hover:shadow-md cursor-pointer active:scale-98 transition-all flex items-center justify-center space-x-2"
+                  onClick={async () => {
+                    setIsPaying(true);
+                    try {
+                      let mappedMethod = 'Card';
+                      if (paymentMethod === 'cod') mappedMethod = 'COD';
+                      else if (paymentMethod === 'upi') mappedMethod = 'UPI';
+                      else if (paymentMethod === 'netbank') mappedMethod = 'NetBanking';
+                      await paymentService.createPayment(orderId, mappedMethod);
+                      setPaymentPending(false);
+                      toast.success('Payment completed successfully!');
+                    } catch (err: any) {
+                      console.error('Payment retry failed:', err);
+                      toast.error('Payment failed. Please try again or pay from My Orders.');
+                    } finally {
+                      setIsPaying(false);
+                    }
+                  }}
+                >
+                  {isPaying ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <CreditCard className="w-4 h-4 text-white" />}
+                  <span>Pay Now</span>
+                </Button>
+
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  className="w-full rounded-2xl font-black text-xs h-12 border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 cursor-pointer active:scale-98 transition-all"
+                  onClick={handleFinish}
+                >
+                  Pay Later &amp; Continue Shopping
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full rounded-2xl font-black text-xs h-12 shadow cursor-pointer active:scale-98 transition-all"
+                onClick={handleFinish}
+              >
+                Continue Shopping
+              </Button>
+            )}
           </div>
         ) : (
           /* Step 2 & 3 layouts */

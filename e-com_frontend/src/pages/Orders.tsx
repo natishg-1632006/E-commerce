@@ -22,8 +22,10 @@ import {
   CreditCard,
   ShoppingBag,
   ShoppingCart,
-  Tag
+  Tag,
+  Loader2
 } from 'lucide-react';
+import { paymentService } from '../services/payment.service';
 
 import ssdImg from '../assets/products/samsung_t7_ssd.jpg';
 import sleeveImg from '../assets/products/laptop_sleeve_leather.jpg';
@@ -154,6 +156,7 @@ export const Orders: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
 
   // State Management
   const [searchQuery, setSearchQuery] = useState('');
@@ -170,41 +173,66 @@ export const Orders: React.FC = () => {
   const [isOpenDate, setIsOpenDate] = useState(false);
   const [isOpenSort, setIsOpenSort] = useState(false);
 
+  const fetchOrders = async () => {
+    setIsLoading(true);
+    try {
+      const token = localStorage.getItem('natcart_access_token') || localStorage.getItem('natcart_token');
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+      const userId = decodeJwtSub(token);
+      if (!userId) {
+        navigate('/login');
+        return;
+      }
+
+      // Fetch user orders
+      const userOrders = await orderService.getOrdersByUser(userId);
+      setOrders(userOrders || []);
+
+      // Also fetch catalog products to resolve potential recommendations dynamically
+      const res = await productService.getProducts({ limit: 100 });
+      const prodData = res.data || res.products || (Array.isArray(res) ? res : []);
+      setCatalogProducts(prodData || []);
+
+    } catch (err: any) {
+      console.error('Error loading user orders:', err);
+      const errMsg = err.response?.data?.message || err.message || 'Failed to load orders.';
+      toast.error(errMsg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Load real orders from backend
   useEffect(() => {
-    const fetchOrders = async () => {
-      setIsLoading(true);
-      try {
-        const token = localStorage.getItem('natcart_access_token') || localStorage.getItem('natcart_token');
-        if (!token) {
-          navigate('/login');
-          return;
-        }
-        const userId = decodeJwtSub(token);
-        if (!userId) {
-          navigate('/login');
-          return;
-        }
-
-        // Fetch user orders
-        const userOrders = await orderService.getOrdersByUser(userId);
-        setOrders(userOrders || []);
-
-        // Also fetch catalog products to resolve potential recommendations dynamically
-        const res = await productService.getProducts({ limit: 100 });
-        const prodData = res.data || res.products || (Array.isArray(res) ? res : []);
-        setCatalogProducts(prodData || []);
-
-      } catch (err: any) {
-        console.error('Error loading user orders:', err);
-        const errMsg = err.response?.data?.message || err.message || 'Failed to load orders.';
-        toast.error(errMsg);
-      } finally {
-        setIsLoading(false);
-      }
-    };
     fetchOrders();
   }, [navigate]);
+
+  const handlePayNow = async (orderId: string, paymentMethod: string) => {
+    setPayingOrderId(orderId);
+    try {
+      let mappedMethod = 'Card';
+      const m = String(paymentMethod).toUpperCase();
+      if (m.includes('COD')) mappedMethod = 'COD';
+      else if (m.includes('UPI') || m.includes('QR')) mappedMethod = 'UPI';
+      else if (m.includes('BANK') || m.includes('NET_BANKING')) mappedMethod = 'NetBanking';
+
+      await paymentService.createPayment(orderId, mappedMethod);
+      toast.success('Payment completed successfully!');
+      await fetchOrders();
+    } catch (err: any) {
+      console.error('Payment retry error:', err);
+      const backendMsg = err.response?.data?.message || err.response?.data?.error || err.response?.data?.errors;
+      const errMsg = Array.isArray(backendMsg)
+        ? backendMsg.join(', ')
+        : (typeof backendMsg === 'object' ? JSON.stringify(backendMsg) : (backendMsg || err.message || 'Payment failed.'));
+      toast.error(errMsg);
+    } finally {
+      setPayingOrderId(null);
+    }
+  };
 
   // Tab configurations
   const tabs = ['All Orders', 'In Transit', 'Delivered'];
@@ -819,6 +847,20 @@ export const Orders: React.FC = () => {
                               >
                                 Details
                               </button>
+                              {String(order.paymentStatus).toUpperCase() !== 'PAID' && String(order.paymentMethod).toUpperCase() !== 'COD' && (
+                                <button
+                                  disabled={payingOrderId !== null}
+                                  onClick={() => handlePayNow(order.id, order.paymentMethod)}
+                                  className="h-9 px-6 rounded-full bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-black uppercase tracking-wider flex items-center space-x-1.5 shadow transition-colors cursor-pointer active:scale-95 disabled:opacity-50"
+                                >
+                                  {payingOrderId === order.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <CreditCard className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>Pay Now</span>
+                                </button>
+                              )}
                             </>
                           )}
                         </div>
@@ -960,6 +1002,20 @@ export const Orders: React.FC = () => {
                             >
                               Details
                             </button>
+                            {String(order.paymentStatus).toUpperCase() !== 'PAID' && String(order.paymentMethod).toUpperCase() !== 'COD' && (
+                              <button
+                                disabled={payingOrderId !== null}
+                                onClick={() => handlePayNow(order.id, order.paymentMethod)}
+                                className="flex-grow h-12 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center space-x-1.5 shadow transition-colors cursor-pointer active:scale-95 border-none disabled:opacity-50"
+                              >
+                                {payingOrderId === order.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                                ) : (
+                                  <CreditCard className="w-4 h-4 text-white" />
+                                )}
+                                <span>PAY NOW</span>
+                              </button>
+                            )}
                           </>
                         )}
                       </div>
